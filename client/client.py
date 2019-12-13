@@ -1,15 +1,17 @@
 from socket import *
 import json
 from tkinter import *
+from tkinter.filedialog import askopenfilename
 import threading
 import struct
+import uuid
 
 SENDERPORT = 1501
 MYPORT = 1234
 MYGROUP = "224.1.1.1"
 HOST = "127.0.0.1"  # 'chat.loopy.tech'
 PORT = 8945
-BUFSIZ = 1024
+BUFFERSIZE = 1024*1024*2
 ADDR = (HOST, PORT)
 MYTTL = 255
 
@@ -65,7 +67,7 @@ class Client:
             else:
                 socket = self.father.client_socket
                 socket.send(raw_data)
-                raw_data = socket.recv(BUFSIZ).decode()
+                raw_data = socket.recv(BUFFERSIZE).decode()
                 recv_data = json.loads(raw_data)
                 if (
                         recv_data["type"] == "login"
@@ -133,17 +135,47 @@ class Client:
             def run(self):
                 while True:
                     try:
-                        raw_data = self.socket.recv(BUFSIZ).decode()
+                        raw_data = self.socket.recv(BUFFERSIZE).decode()
                         data = json.loads(raw_data)
                     except:
                         break
                     switcher = {
                         "list": self.list,
-                        "private_chat": self.chat,
-                        "group_chat": self.chat,
+                        "private_msg": self.chat,
+                        "group_msg": self.chat,
                         "ping": self.ping,
+                        "file": self.recv_file,
                     }
                     switcher[data["type"]](data)
+
+            def recv_file(self, data):
+
+                print("[RECV_FILE]")
+
+                file_remain_size = data['size']
+                file_ext = data['ext']
+                file_sender = data['from']
+                bin_data = b''
+                while file_remain_size > 0:
+                    buffer = self.socket.recv(
+                        BUFFERSIZE if file_remain_size > BUFFERSIZE else file_remain_size)
+                    file_remain_size -= len(buffer)
+                    bin_data += buffer
+                    if not buffer:
+                        break
+
+                
+
+                file_name = './' + str(uuid.uuid4()) + '.' + file_ext
+
+                print(file_name, file_remain_size)
+
+                with open(file_name, 'wb') as f:
+                    f.write(bin_data)
+
+                text_box = self.father.text_box
+                t = "[" + file_sender + "->]" + "发给了你一个文件：" + file_name[2:] + "\n"
+                text_box.insert(END, t)
 
             def list(self, data):
                 """刷新列表"""
@@ -158,7 +190,7 @@ class Client:
                 """接收聊天信息并打印"""
                 text_box = self.father.text_box
                 text = (
-                        ("[群聊]" if data["type"] == "group_chat" else "")
+                        ("[群聊]" if data["type"] == "group_msg" else "")
                         + data["from"]
                         + ": "
                         + data["msg"]
@@ -261,20 +293,52 @@ class Client:
                     # 清空输入框
                     entry_input.delete(0, END)
 
+            def send_file(self, socket, label_target):
+                """点击发送文件按钮"""
+                target = label_target["text"]
+                filename = askopenfilename()
+                # print(filename)
+                ext = filename.split('.')[-1]
+                with open(filename, 'rb') as f:
+                    data = f.read()
+                size = len(data)
+                if target == "群聊":
+                    header = {
+                        "type": "group_file",
+                        "size": size,
+                        "ext": ext,
+                    }
+                    t = "[-> All] " + "File Sent" + "\n"
+                else:
+                    header = {
+                        "type": "private_file",
+                        "size": size,
+                        "ext": ext,
+                        "to": target,
+                    }
+                    t = "[->" + target + "] " + "File Sent" + "\n"
+                raw_data = json.dumps(header).encode()
+                socket.send(raw_data)
+                import time
+                time.sleep(3)
+                socket.send(data)
+                text_box = self.father.text_box
+                text_box.insert(END, t)
+
             def send(self, socket, label_target, entry_input):
                 """点击发送按钮"""
                 text = entry_input.get()
                 target = label_target["text"]
                 username = self.father.father.username
                 if target == "群聊":
-                    data = {"type": "group_chat", "msg": text, "from": username}
+                    data = {"type": "group_msg", "msg": text, "from": username}
                 elif target == "组播":
                     self.send_broad(text, entry_input, username)
                     return
                 else:
                     # 私聊
                     data = {
-                        "type": "private_chat",
+                        "type": "private_msg",
                         "msg": text,
                         "to": target,
                         "from": username,
@@ -356,6 +420,11 @@ class Client:
                     command=lambda: self.send(father.socket, label_target, entry_input),
                 )
                 button_send.place(x=480, y=371, anchor=CENTER)
+                # ! button send file
+                button_send_file = Button(
+                    f, text="发送文件", command=lambda: self.send_file(father.socket, label_target)
+                )
+                button_send_file.place(x=515, y=330, anchor=CENTER)
 
                 # 刷新列表
                 self.refresh(father.socket)

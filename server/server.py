@@ -9,7 +9,7 @@ import json
 
 HOST = ""
 PORT = 8945
-BUFSIZ = 1024
+BUFFERSIZE = 1024*2
 ADDR = (HOST, PORT)
 
 
@@ -19,80 +19,152 @@ class User:
         self.client_socket = client_socket
 
 
-class Handler:
+class MsgHandler:
     user_pool = {}  # user: user_pool
 
     def __init__(self, user):
         self.user = user
 
     @classmethod
-    def remove_user(cls,user):
+    def remove_user(cls, user):
         try:
             cls.user_pool.pop(user)
         except Exception as e:
-            log("[Handler.remove_user] {}".format(e), "ERROR")
+            log("[MsgHandler.remove_user] {}".format(e), "ERROR")
 
     @staticmethod
-    def send_to_users(users, data):
+    def send_json_to_users(users, data):
         raw_data = json.dumps(data)
         for user in users:
             user.client_socket.send(raw_data.encode())
-        log("[send_to_users] " + raw_data, "SUCCESS")
+        log("[send_json_to_users] " + raw_data, "SUCCESS")
 
     @staticmethod
-    def send_to_user(user, data):
-        userList = [k for k, v in Handler.user_pool.items() if v in user]
-        Handler.send_to_users(userList, data)
+    def send_json_to_user(username, data):
+        user_list = [k for k, v in MsgHandler.user_pool.items()
+                     if v == username]
+        MsgHandler.send_json_to_users(user_list, data)
 
-    @staticmethod
-    def private_chat(data):
-        Handler.send_to_user(data["to"], data)
-
-    @staticmethod
-    def group_chat(data):
-        Handler.send_to_users(Handler.user_pool.keys(), data)
-
-    def send_back(self, data):
+    def send_json_back(self, data):
         raw_data = json.dumps(data)
         self.user.client_socket.send(raw_data.encode())
         log("[send_to_user] " + raw_data, "SUCCESS")
 
+    @staticmethod
+    def send_bin_to_users(users, bin_data):
+        for user in users:
+            user.client_socket.send(bin_data)
+        log("[send_bin_to_users]", "SUCCESS")
+
+    @staticmethod
+    def send_bin_to_user(user, bin_data):
+        MsgHandler.send_bin_to_users([user], bin_data)
+
+    @staticmethod
+    def private_msg(data):
+        MsgHandler.send_json_to_user(data["to"], data)
+
+    @staticmethod
+    def group_msg(data):
+        MsgHandler.send_json_to_users(MsgHandler.user_pool.keys(), data)
+
+    @staticmethod
+    def private_bin(data, user):
+        MsgHandler.send_bin_to_user(user, data)
+
+    @staticmethod
+    def group_bin(data, user_list):
+        MsgHandler.send_bin_to_users(user_list, data)
+
+    def private_file(self, data):
+        target = data['to']
+        file_remain_size = data['size']
+
+        user = [k for k, v in MsgHandler.user_pool.items() if v == target]
+
+        bin_data = b''
+        while file_remain_size > 0:
+            buffer = self.user.client_socket.recv(
+                BUFFERSIZE if file_remain_size > BUFFERSIZE else file_remain_size)
+            file_remain_size -= len(buffer)
+            bin_data += buffer
+            if not buffer:
+                break
+
+        # ! send file head
+        self.send_json_to_user(user, {
+            "type": "file",
+            "from": MsgHandler.user_pool[self.user],
+            "size": data['size'],
+            "ext": data['ext'],
+        })
+        import time
+        time.sleep(3)
+
+        self.send_bin_to_user(user, bin_data)
+
+    def group_file(self, data):
+
+        file_remain_size = data['size']
+
+        bin_data = b''
+        while file_remain_size > 0:
+            buffer = self.user.client_socket.recv(
+                BUFFERSIZE if file_remain_size > BUFFERSIZE else file_remain_size)
+            file_remain_size -= len(buffer)
+            bin_data += buffer
+            if not data:
+                break
+
+        # ! send file head
+        self.send_json_to_users(MsgHandler.user_pool.keys(),{
+            "type": "file",
+            "from": MsgHandler.user_pool[self.user],
+            "size": data['size'],
+            "ext": data['ext'],
+        })
+
+        self.send_bin_to_users(MsgHandler.user_pool.keys(),bin_data)
+
     def login(self, data):
-        if self.user in Handler.user_pool.keys():  # already login
+        if self.user in MsgHandler.user_pool.keys():  # already login
             data["status"] = False
             data["info"] = "您已经登录了"
-        elif data["username"] in Handler.user_pool.values():  # username in use
+        elif data["username"] in MsgHandler.user_pool.values():  # username in use
             data["status"] = False
             data["info"] = "该用户名已被占用"
         else:  # login success
             data["status"] = True
-            Handler.user_pool[self.user] = data["username"]
-        self.send_back(data)
+            MsgHandler.user_pool[self.user] = data["username"]
+        self.send_json_back(data)
 
     def logout(self, data):
-        log("[log_out] user:{} logout".format(Handler.user_pool[self.user]), "SUCCESS")
-        Handler.user_pool.pop(self.user)
+        log("[log_out] user:{} logout".format(
+            MsgHandler.user_pool[self.user]), "SUCCESS")
+        MsgHandler.user_pool.pop(self.user)
 
     def ping(self):
-        self.send_back({"type": "ping"})
+        self.send_json_back({"type": "ping"})
 
     def get_list(self, data):
-        data["list"] = list(Handler.user_pool.values())
-        self.send_back(data)
+        data["list"] = list(MsgHandler.user_pool.values())
+        self.send_json_back(data)
 
     def __main__(self, data):
         switcher = {
             "login": self.login,
             "ping": self.ping,
             "list": self.get_list,
-            "private_chat": self.private_chat,
-            "group_chat": self.group_chat,
+            "private_msg": self.private_msg,
+            "group_msg": self.group_msg,
             "logout": self.logout,
+            "private_file": self.private_file,
+            "group_file": self.group_file,
         }
         try:
             return switcher[data["type"]](data)
         except Exception as e:
-            log("[Handler.__main__] {}".format(e), "ERROR")
+            log("[MsgHandler.__main__] {}".format(e), "ERROR")
             data["status"] = False
             data["info"] = "未知错误"
             return data
@@ -105,9 +177,10 @@ class ClientThread(threading.Thread):
 
     def run(self):
         try:
-            handler = Handler(self.user)  # handler input
+            handler = MsgHandler(self.user)  # handler input
             while True:
-                raw_data = self.user.client_socket.recv(BUFSIZ).decode()
+                raw_data = self.user.client_socket.recv(BUFFERSIZE).decode()
+                print(raw_data)
                 rec_data = json.loads(raw_data)
                 log("receive " + raw_data)
                 if rec_data["type"] == "logout":
@@ -119,10 +192,11 @@ class ClientThread(threading.Thread):
                 log("[Connect Failed] {}".format(e), "ERROR")
         finally:
             log(
-                "[log_out] user:{} logout".format(Handler.user_pool[self.user]),
+                "[log_out] user:{} logout".format(
+                    MsgHandler.user_pool[self.user]),
                 "SUCCESS",
             )
-            Handler.remove_user(self.user)
+            MsgHandler.remove_user(self.user)
             self.user.client_socket.close()
 
     def stop(self):
@@ -170,6 +244,4 @@ def log(msg, type=None):
 
 
 if __name__ == "__main__":
-    pic = ";;;;;;;;;;;;;;;;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n;;;;;;;;!!!;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;!!!!;;;;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n;;;;;;;;!!!;;;;;;;;;;!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;;;;;;;!!!!!!!!!!!!!!!!!!||%%||!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;;;;;;;!!!!!!!!!!!!$@############&$$$%|!!|!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;;;;;;;!!!!!!!!|&#######################@&%|!!!!!!!!!!!!!!!!!!!!!!!!!!!\n!!!!!!!;!!!;;;;;;;;!!!!!!|$@#############################@$%!!!!!!!!!!!!!!!!!!!!!!!!!\n!!!!!!!!!!!!!!!;;;;;!!!|&###################################&|!!!!!!!!!!!!!!!!!!!!!!!\n!!!!!!!!!!!!!!!;;;!!!!$#######################################&%!!!!!!!!!!!!!!!!!!!!!\n;;;;;;;!!!!!!!;;!!!!%@#########################################@$|!!!!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;;!!!%@############@@@##@@@@@@@@@@&&&@@@@#########@&|!!!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;!!!$@######@@@@@@&&&&@@&&&&&&&&&&$$%$$$$$&@@##@@##@&|!!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;!!%@####@@@@&&$$$%$%$$$$$%%%%$$%|||||%%|||%$&@####@@$!!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;!|&@@@@@@@&$$%%||||!|%||!!;!!!!!!;!!!!!;!!!||$@###@@&|!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;!$@@@##@@&$%|!!!!;;::;;;:::::::::::;;;;;;;;!!|$@###@@%!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;!|&@@@##@&%|!;:::::''''''''''''''':::::::::;;;!|&###@@$|!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;!%&@@@@@&$|!::::'''''''''''''''''''''::::::::;;!$@###@&|!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;!%&@@@&&$|;::''':::''''''''''''''''':::;!!;:::;;|$@@@@$|!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;|&@@@&$|;::':::;;;!!!;;::''```'':;;!!!!!!!;;;:;;%&@@@$!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;!%&@@@$!::'::::''''''::::''''''':::'''''::;;;::;|&@@&|!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;!|%&##$;:'''::':::;;:::''''``'':''':;;;;;;;;::::!&@$|!!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;;!!::|%%%!;:'':;;;||!!;:::::::::':;|%%|!!;::;;||%|!;||!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;;!;::|!:''::''::'::;;;;:;!;:';!;;;;;;;:;;;;;;;::;||:!!!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;;;;'';;::''''''''''''''''::''::::::'''''''':''::;|!;!!!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;;;::;!;::''`````''''''''''''''::::''''''''''''::;!;;;;!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;;;;::;;::''``````````''''''`''':::''```````'''::;;;;;!!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;;;;;:::::'''````````'':''''``''::;;:'`````''':::;;;;!!!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;;;;;;:::::'''``````''::';|;:':;!;:;;''````'''::;;;;!!!!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;;;;;;;;:::''''````'''''':::::::;::'''''''''':::;;;;!!!!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;;;;;;;;;::'''''``''''''''''':'':::'''''''''':::;!!!!!!!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;;;;;;;;;::''''''''''''''''''''''::::''''''':::;;!!!!!!!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;;;;;;;;;;:'''''''':;!!!!!!!|!|||||!!::'''::::;;!!!!!!!!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;;;;;;;!!;;:::'''''::''::::::;;;;::::::::::::;;!!!!!!!!!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;;;;;;;;;;;;;;:::::'''''':::;;;::::::::::;;;;||!!!!!!!!!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;;;;;;;;;;|&%;;;;::''''''''''''''''::::;;;!!$#&|!!!!!!!!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;;;;;;;;;!$#$;;;!!;::''''''''''''''::;;!!!!!$#&%|!!!!!!!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;;;;;;;;|%$#&;::;;!!;;:::::::::::;;;!!|!!;;;$#&$$|!!!!!!!!!!!!!!!!!!!!!\n;;;;;;;;;;;;;;;;!|%$$$$%$@&!::::;;!!|||||||%%||%%||!!;;;;!$#$%$$%|!!!!!!!!!!!!!!!!!!!\n;;;;;;;;;;!!|%%$%%$$$%$%$&@%:':::::;;;!!|||%|||!!!;;;;:;;%&@$%$$%$$$%|!!!!!!!!!!!!!!!\n;;;;;;;!|%%||%%%$&&$$%%%%$&@%:''':::::::::;;;;;;;;;::::;|&&&$%$$$%$$$&$%%|!!!!!!!!!!!\n;;!!!|%%%||%|%$$&&&$%$%|%$$&&%:''''::::::::::;;;::::::;!$&$$%%$$$%$$$$%$$$$%%%|!!!!!!\n|||||%%$$$$$%$$$&$$$%$%|%%$&$&%;''''':::;;;;;;:::::::;!$&$$$%%$$$%%$$%$$$$$&$%%%%||!!\n|%%$%%$$$$$$%$$$$%$%%%$$@##@&$$$|;''''''::::::::::::;|$$&$$$%%$$$%%$%$$$$$&&$%%$$$|%|\n%%%%%%%%%%&$%$$$$$%$$@######&$$$%|!:''''':::::'''':;|%$$&####@$$$%%$$$%$&&&$$%%$$$$$%\n%%$%|%%$%$&$%%$$$%$@####@@@@@&&&&$%!;:''''''''''':!|%$$&@######@$%%$$&$$&&$$$%%$$%%$%\n$%%||%$$$$$%|%%$&&@&&&&$$&%%@@&$&&&$%!:'``````'':;|$$&@&&##@@####&%$$$$%$$$$%%%$$%%$%\n%%%||%$$%$$%|%$%&&$%$$$%%$%|%&&&&$$@&&%;''```''!%%%$@&$$&&&$&&$$&@@&$$%%%$$$%%%$%%%$%\n%%$||%$%%$$%%%%%%$$%%%%%%%%||%$$$$$&$&&&%;''':|$%%%&&&&$$$$$$$%%%&&@@$%%$$$$%%%$%%$$%\n%%$!|%%%%%%%%$$$$$$%|%%%%%%||%%%%%$%|%%%&$!;!|%%%%%&&&$%$$%%$$%|%$$$$$%%$%$$$$%$%%$$%\n%%$!|%%%%%%|!%%%%%%||%%%%%%||%%%%%$%|%$%%&@$%%%||&&$&$|%$$%%$%||%$%%$%|%$$$$$%%$$%%%|\n%%%|||%||%%|!%%%|%%|!|%%%%%%||%%%%$$||%$$%||%$$&&$%$$%|%$$%%%%||%%%%$$%%$$$%$%%%$%%%|\n%|%|||%%|%%%!%%%|%%|!|%%|%$%||%%%%$$%|$&$%&&&%%$$%%$$%|%%%%%%%||%$%%%%||%%%%$%|%$%%%|\n%|%|!|%%%%%%!|%%%|%|!|%%%%$%!|%%%%%%%|$$$$$$$%|%$%%%$%|%$%%%$%!|%$%%$%||%$%%%%|%%%$%|\n%|%|!|%%||%%!!%%%%%|!%%%%%%%||%%%%%%%%$$$%%$$||%$%%%$%|%%%%%%%!|%%%%%%||$$%%%%||%%%%|\n%|%%|!|%||%|||%||%%|!%$%|%%%||%%%%%$%%$$$%%$$||%%%%%%%!%%%|%%%!|%%%%%%||%%%%%%||%%%%|\n%|%%|!|%||%|||%%|%%|!%%%|%%%||%%%%$$$$&%$%%$$||%$%%%%|!%%%%%%%!|%%%%%%||%%%%%%!|$%%%%\n%||%|!|%%%%|!|%%|%%|!%%%||%%!|%%%%$$$&&%$%%$%||%$%%%%|!%%%%%%%!|%%%%%%!|%%%%$%||$%%%|\n%||%||%%%|%|!|%%|%%%!|%%||%%!|%$%%$$$$&%$%%$%||%%%%$%|!%%%|%%|!|%%||%%!|%%%%$|||$%%%|\n%%|%||%||%%%!|%%|%%%!|%%||%%!|%$%%$$$$&%$%%$%||%%%%%%%||%%|%%|!|%%|%%%!|%%%%%|||$%%$|\n|%%|||%%%$%|!|%%|%%|!|%%||%%!!$$%%$&$$$$&$$$$||%$%%%%|!%%%|%%|!|%%||%%!|%%%%%|||$%%$|\n%%%|!|$$%%%|||%%|%%|!|%%||%%||$$%$$&%%$$&$$$$||%%%%%%|!%%%|%%%!|%%%%%%!|%$%%$|||$%%$%\n%$$%|%$%%|%|!|%%|%%%!|%%||%%||$$%%$$%%$$$%%$$||%%%%%%|!%$%|%$%!%%%||%%!|$%%%$%|%$%%$|\n&$%$%%%%%%%|!%%%|%%%!|%%||%%||$$%%$&%|$$$%%%%||%%%%%%|!%$%%%%%|%%%%%$%||$%%%$||$$%%$|\n"
-    print("\033[5;30;41m{}\033[0m".format(pic))
     Server().__main__()
