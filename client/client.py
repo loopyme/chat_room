@@ -33,10 +33,16 @@ class Client:
     def error_window(info):
         """错误提示界面"""
         error_window = Tk()
-        error_window.geometry("200x120")
-        error_window.title("Error!")
+        screenwidth =  error_window.winfo_screenwidth()
+        screenheight = error_window.winfo_screenheight()
+        width=200
+        height=120
+        alignstr = '%dx%d+%d+%d' % (width, height, (screenwidth-width)/2, (screenheight-height)/2)
+        error_window.geometry(alignstr)
+        error_window.title("错误")
         Label(error_window, text=info).pack(padx=5, pady=20, fill="x")
-        Button(error_window, text="确定", command=error_window.destroy).pack()
+        button=Button(error_window, text="确定", command=error_window.destroy)
+        button.place(relx=0.3,rely=0.5,relwidth=0.4,relheight=0.3)
         error_window.mainloop()
 
     class Login:
@@ -79,22 +85,30 @@ class Client:
 
         def window(self):
             """登录窗口GUI"""
-            tk = Tk()
-            tk.geometry("250x150")
-            tk.title("登录界面")
-            frame = Frame(tk)
-            frame.pack(expand=YES, fill=BOTH)
-            Label(frame, font="Arial, 15", text="请输入用户名：", anchor="w").pack(
+            mywindow = Tk()
+            #mycanvas=Canvas(mywindow,width=580,height=400,bg='red')
+            #mycanvas.pack()
+            #mywindow.attributes("bg",red)
+            screenwidth = mywindow.winfo_screenwidth()
+            screenheight = mywindow.winfo_screenheight()
+            width = 580
+            height = 400
+            alignstr = '%dx%d+%d+%d' % (width, height, (screenwidth-width)/2, (screenheight-height)/2)
+            mywindow.geometry(alignstr)
+            mywindow.title("登录")
+            mywindow.resizable(width=False, height=False)
+            #frame = Frame(mywindow)
+            #frame.pack(expand=YES, fill=BOTH)
+            lable=Label(mywindow, font="Arial, 20", text="请输入用户名", anchor="n").pack(
                 padx=10, pady=15, fill="x"
             )
-            entry = Entry(frame)
-            entry.pack(padx=10, fill="x")
-            entry.bind("<Key-Return>", lambda x: self.login(entry, tk))
+            entry = Entry(mywindow,font=17)
+            entry.place(relx=0.05,rely=0.15,relwidth=0.9,relheight=0.1)
+            entry.bind("<Key-Return>", lambda x: self.login(entry, mywindow))
+            button = Button(mywindow, text="登录",font=50,command=lambda: self.login(entry, mywindow))
+            button.place(relx=0.4,rely=0.3,relheight=0.1,relwidth=0.2)
 
-            button = Button(frame, text="登录", command=lambda: self.login(entry, tk))
-            button.pack()
-
-            tk.mainloop()
+            mywindow.mainloop()
 
         def __main__(self):
             self.window()
@@ -155,29 +169,6 @@ class Client:
             def ping(self):
                 pass
 
-        # class BroadListenThread(threading.Thread):
-        #     """组播侦听线程"""
-        #
-        #     def __init__(self, father):
-        #         threading.Thread.__init__(self)
-        #         self.father = father
-        #
-        #     def run(self):
-        #         self.alive = True
-        #         sock = self.father.recv_socket
-        #         while self.alive:
-        #             try:
-        #                 raw_data, addr = sock.recvfrom(BUFSIZ)
-        #                 data = json.loads(raw_data)
-        #             except Exception as e:
-        #                 pass
-        #             else:
-        #                 text_box = self.father.text_box
-        #                 text = "[组播]" + data["from"] + ": " + data["msg"] + "\n"
-        #                 text_box.insert(END, text)
-        #
-        #     def stop(self):
-        #         self.alive = False
 
         class Window:
             def __init__(self, father):
@@ -191,7 +182,7 @@ class Client:
                 socket.send(raw_data)
 
             def change_address(self):
-                def set_address(entry1, entry2, entry3, self, tk):
+                def set_address(entry1, entry2, entry3, self, mywindow):
                     global MYPORT, MYGROUP
                     if self.father.recv_socket:
                         # 停止之前的地址
@@ -232,31 +223,31 @@ class Client:
                         BroadListenThread = self.father.BroadListenThread(self.father)
                         BroadListenThread.start()
                         self.father.BroadListenThread = BroadListenThread
-                        tk.destroy()
+                        mywindow.destroy()
 
                 """修改组播地址"""
-                tk = Tk()
-                tk.geometry("270x120")
-                tk.title("请修改组播设置")
-                Label(tk, text="组播地址: ").grid(row=0, column=0)
-                Label(tk, text="监听端口: ").grid(row=1, column=0)
-                Label(tk, text="本地端口: ").grid(row=2, column=0)
-                entry1 = Entry(tk)
+                mywindow = Tk()
+                mywindow.geometry("270x120")
+                mywindow.title("请修改组播设置")
+                Label(mywindow, text="组播地址: ").grid(row=0, column=0)
+                Label(mywindow, text="监听端口: ").grid(row=1, column=0)
+                Label(mywindow, text="本地端口: ").grid(row=2, column=0)
+                entry1 = Entry(mywindow)
                 entry1.grid(row=0, column=1)
                 entry1.insert(END, MYGROUP)
-                entry2 = Entry(tk)
+                entry2 = Entry(mywindow)
                 entry2.grid(row=1, column=1)
                 entry2.insert(END, MYPORT)
-                entry3 = Entry(tk)
+                entry3 = Entry(mywindow)
                 entry3.grid(row=2, column=1)
                 entry3.insert(END, SENDERPORT)
                 Button(
-                    tk,
+                    mywindow,
                     text="确定",
-                    command=lambda: set_address(entry1, entry2, entry3, self, tk),
+                    command=lambda: set_address(entry1, entry2, entry3, self, mywindow),
                 ).grid(row=3, column=0, columnspan=2)
 
-                tk.mainloop()
+                mywindow.mainloop()
 
             def send_broad(self, msg, entry_input, username):
                 send_socket = self.father.send_socket
@@ -305,21 +296,25 @@ class Client:
 
             def __main__(self):
                 father = self.father
-                tk = Tk()
-                tk.geometry("600x400")
-                tk.title("Chatroom")
-
+                mywindow = Tk()
+                screenwidth = mywindow.winfo_screenwidth()
+                screenheight = mywindow.winfo_screenheight()
+                width = 600
+                height = 400
+                alignstr = '%dx%d+%d+%d' % (width, height, (screenwidth-width)/2, (screenheight-height)/2)
+                mywindow.geometry(alignstr)
+                mywindow.title("聊天室")
+                mywindow.resizable(width=False, height=False)
                 # 背景
-                f = Frame(tk, bg="#EEEEEE", width=600, height=400)
-                f.place(x=0, y=0)
-
+                f = Frame(mywindow, bg="#EEEEEE", width=600, height=400)
+                #f.place(x=0, y=0)
+                f.pack()
                 # 聊天内容框
                 text_box = Text(
                     f,
                     bg="#FFFFFF",
                     width=60,
                     height=22,
-                    # state = DISABLED,
                     bd=0,
                 )
                 text_box.place(x=10, y=10, anchor=NW)
@@ -332,14 +327,9 @@ class Client:
                 listbox.place(x=460, y=35, anchor=NW)
                 father.listbox = listbox
                 button_refresh = Button(
-                    f, text="刷新列表", bd=0, command=lambda: self.refresh(father.socket)
+                    f, text="刷新列表",bd=1, relief=FLAT,command=lambda: self.refresh(father.socket)
                 )
                 button_refresh.place(x=515, y=290, anchor=CENTER)
-                # 修改组播地址
-                # button_change_address = Button(
-                #     f, text="组播地址", command=self.change_address
-                # )
-                # button_change_address.place(x=515, y=330, anchor=CENTER)
                 button_clear = Button(
                     f, text="清屏", command=lambda: text_box.delete(0.0, END)
                 )
@@ -370,7 +360,7 @@ class Client:
                 # 刷新列表
                 self.refresh(father.socket)
 
-                tk.mainloop()
+                mywindow.mainloop()
 
                 father.socket.shutdown(2)
                 try:
@@ -385,10 +375,6 @@ class Client:
             listen_thread.start()
             self.ListenThread = listen_thread
 
-            # 组播侦听线程
-            # BroadListenThread = self.BroadListenThread(self)
-            # BroadListenThread.start()
-            # self.BroadListenThread = BroadListenThread
 
             # 建立窗口
             window = self.Window(self)
