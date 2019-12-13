@@ -30,7 +30,7 @@ class Handler:
         try:
             cls.user_pool.pop(user)
         except Exception as e:
-            log(e, "ERROR")
+            log("[Handler.remove_user] {}".format(e), "ERROR")
 
     @staticmethod
     def send_to_users(users, data):
@@ -92,7 +92,7 @@ class Handler:
         try:
             return switcher[data["type"]](data)
         except Exception as e:
-            log(e, "ERROR")
+            log("[Handler.__main__] {}".format(e), "ERROR")
             data["status"] = False
             data["info"] = "未知错误"
             return data
@@ -116,7 +116,7 @@ class ClientThread(threading.Thread):
                     handler.__main__(rec_data)
         except Exception as e:
             if str(e) != "No JSON object could be decoded":
-                log("Connect Failed: " + str(e), "ERROR")
+                log("[Connect Failed] {}".format(e), "ERROR")
         finally:
             log(
                 "[log_out] user:{} logout".format(Handler.user_pool[self.user]),
@@ -130,7 +130,7 @@ class ClientThread(threading.Thread):
             self.user.client_socket.shutdown(2)
             self.user.client_socket.close()
         except Exception as e:
-            log(e, "ERROR")
+            log("[ClientThread.stop] {}".format(e), "ERROR")
             pass
 
 
