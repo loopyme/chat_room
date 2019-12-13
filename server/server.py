@@ -77,7 +77,7 @@ class Handler:
         self.send_back({"type": "ping"})
 
     def get_list(self, data):
-        data["list"] = Handler.user_pool.values()
+        data["list"] = dict(Handler.user_pool.values())
         self.send_back(data)
 
     def __main__(self, data):
