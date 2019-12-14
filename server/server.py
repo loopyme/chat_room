@@ -180,7 +180,6 @@ class ClientThread(threading.Thread):
             handler = MsgHandler(self.user)  # handler input
             while True:
                 raw_data = self.user.client_socket.recv(BUFFERSIZE).decode()
-                print(raw_data)
                 rec_data = json.loads(raw_data)
                 log("receive " + raw_data)
                 if rec_data["type"] == "logout":

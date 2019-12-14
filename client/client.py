@@ -18,33 +18,34 @@ MYTTL = 255
 
 class Client:
     def __init__(self):
-        self.is_connect = False
+        self.connected = False
 
     def connect(self):
         """连接服务器"""
-        if not self.is_connect:
+        if not self.connected:
             self.client_socket = socket(AF_INET, SOCK_STREAM)
             self.client_socket.connect(ADDR)
-            self.is_connect = True
+            self.connected = True
 
     def disconnect(self):
         """断开服务器"""
         self.client_socket.close()
 
     @staticmethod
-    def error_window(info):
+    def error_window(error_info):
         """错误提示界面"""
         error_window = Tk()
-        screenwidth =  error_window.winfo_screenwidth()
+        screenwidth = error_window.winfo_screenwidth()
         screenheight = error_window.winfo_screenheight()
-        width=200
-        height=120
-        alignstr = '%dx%d+%d+%d' % (width, height, (screenwidth-width)/2, (screenheight-height)/2)
+        width = 200
+        height = 120
+        alignstr = '%dx%d+%d+%d' % (width, height,
+                                    (screenwidth-width)/2, (screenheight-height)/2)
         error_window.geometry(alignstr)
         error_window.title("错误")
-        Label(error_window, text=info).pack(padx=5, pady=20, fill="x")
-        button=Button(error_window, text="确定", command=error_window.destroy)
-        button.place(relx=0.3,rely=0.5,relwidth=0.4,relheight=0.3)
+        Label(error_window, text=error_info).pack(padx=5, pady=20, fill="x")
+        button = Button(error_window, text="确定", command=error_window.destroy)
+        button.place(relx=0.3, rely=0.5, relwidth=0.4, relheight=0.3)
         error_window.mainloop()
 
     class Login:
@@ -53,9 +54,8 @@ class Client:
         def __init__(self, father):
             self.father = father
 
-        def login(self, entry, login_window):
+        def login(self, username, login_window):
             """登录操作"""
-            username = entry.get()
             self.father.username = username
             data = {"type": "login", "username": username}
             raw_data = json.dumps(data).encode()
@@ -73,6 +73,8 @@ class Client:
                         recv_data["type"] == "login"
                         and recv_data["username"] == username
                         and recv_data["status"] == True
+
+                        # ? Why so many fields here? The first two condition is always true.
                 ):
                     # login success!
                     mainFrame = self.father.MainFrame(self.father)
@@ -87,30 +89,44 @@ class Client:
 
         def window(self):
             """登录窗口GUI"""
-            mywindow = Tk()
-            #mycanvas=Canvas(mywindow,width=580,height=400,bg='red')
-            #mycanvas.pack()
-            #mywindow.attributes("bg",red)
-            screenwidth = mywindow.winfo_screenwidth()
-            screenheight = mywindow.winfo_screenheight()
+            window = Tk()
+            # mycanvas=Canvas(window,width=580,height=400,bg='red')
+            # mycanvas.pack()
+            # window.attributes("bg",red)
+            screenwidth = window.winfo_screenwidth()
+            screenheight = window.winfo_screenheight()
             width = 580
             height = 400
-            alignstr = '%dx%d+%d+%d' % (width, height, (screenwidth-width)/2, (screenheight-height)/2)
-            mywindow.geometry(alignstr)
-            mywindow.title("登录")
-            mywindow.resizable(width=False, height=False)
-            #frame = Frame(mywindow)
+            alignstr = '%dx%d+%d+%d' % (width, height,
+                                        (screenwidth-width)/2, (screenheight-height)/2)
+            window.geometry(alignstr)
+            window.title("登录")
+            window.resizable(width=False, height=False)
+            #frame = Frame(window)
             #frame.pack(expand=YES, fill=BOTH)
-            lable=Label(mywindow, font="Arial, 20", text="请输入用户名", anchor="n").pack(
+
+            # Label
+            lable = Label(window, font="Arial, 20", text="请输入用户名", anchor="n").pack(
                 padx=10, pady=15, fill="x"
             )
-            entry = Entry(mywindow,font=17)
-            entry.place(relx=0.05,rely=0.15,relwidth=0.9,relheight=0.1)
-            entry.bind("<Key-Return>", lambda x: self.login(entry, mywindow))
-            button = Button(mywindow, text="登录",font=50,command=lambda: self.login(entry, mywindow))
-            button.place(relx=0.4,rely=0.3,relheight=0.1,relwidth=0.2)
 
-            mywindow.mainloop()
+            # Username Entry
+            username_entry = Entry(window, font=17)
+            username_entry.place(relx=0.05, rely=0.15,
+                                 relwidth=0.9, relheight=0.1)
+            username_entry.bind(
+                "<Key-Return>", lambda x: self.login(username_entry.get(), window))
+
+            # Login Button
+            button = Button(window, text="登录", font=50, command=lambda: self.login(
+                username_entry.get(), window))
+            button.place(relx=0.2, rely=0.3, relheight=0.1, relwidth=0.2)
+
+            # Exit Button
+            button = Button(window, text="退出", font=50, command=window.destroy)
+            button.place(relx=0.6, rely=0.3, relheight=0.1, relwidth=0.2)
+
+            window.mainloop()
 
         def __main__(self):
             self.window()
@@ -118,11 +134,28 @@ class Client:
     class MainFrame:
         """聊天主窗口"""
 
+        def __main__(self):
+            # 开启监听线程
+            listen_thread = self.ListenThread(self.socket, self)
+            self.listen_thread = listen_thread
+            listen_thread.start()
+            # 建立窗口
+            window = self.Window(self)
+            self.window = window
+            window.__main__()
+
         def __init__(self, father):
             self.father = father
             self.socket = father.client_socket  # may raise a Exception
             self.recv_socket = None
-            self.send_socket = None
+            self.send_socket = self.socket
+
+        def exit(self):
+            """点击退出按钮"""
+            self.send_socket.close()
+            self.recv_socket.close()
+            self.listen_thread.join()
+            self.window.destroy()
 
         class ListenThread(threading.Thread):
             """Socket监听线程，对收到的信息作出相应反馈"""
@@ -131,6 +164,7 @@ class Client:
                 threading.Thread.__init__(self)
                 self.father = father
                 self.socket = socket
+                self.father.recv_socket = socket
 
             def run(self):
                 while True:
@@ -164,8 +198,6 @@ class Client:
                     if not buffer:
                         break
 
-                
-
                 file_name = './' + str(uuid.uuid4()) + '.' + file_ext
 
                 print(file_name, file_remain_size)
@@ -174,7 +206,8 @@ class Client:
                     f.write(bin_data)
 
                 text_box = self.father.text_box
-                t = "[" + file_sender + "->]" + "发给了你一个文件：" + file_name[2:] + "\n"
+                t = "[" + file_sender + "->]" + \
+                    "发给了你一个文件：" + file_name[2:] + "\n"
                 text_box.insert(END, t)
 
             def list(self, data):
@@ -190,17 +223,16 @@ class Client:
                 """接收聊天信息并打印"""
                 text_box = self.father.text_box
                 text = (
-                        ("[群聊]" if data["type"] == "group_msg" else "")
-                        + data["from"]
-                        + ": "
-                        + data["msg"]
-                        + "\n"
+                    ("[群聊]" if data["type"] == "group_msg" else "")
+                    + data["from"]
+                    + ": "
+                    + data["msg"]
+                    + "\n"
                 )
                 text_box.insert(END, text)
 
             def ping(self):
                 pass
-
 
         class Window:
             def __init__(self, father):
@@ -212,86 +244,6 @@ class Client:
                 data = {"type": "list"}
                 raw_data = json.dumps(data).encode()
                 socket.send(raw_data)
-
-            def change_address(self):
-                def set_address(entry1, entry2, entry3, self, mywindow):
-                    global MYPORT, MYGROUP
-                    if self.father.recv_socket:
-                        # 停止之前的地址
-                        self.father.BroadListenThread.stop()
-                        self.father.send_socket.sendto("".encode(), (MYGROUP, MYPORT))
-
-                    try:
-                        # 发送socket
-                        MYGROUP = entry1.get()
-                        MYPORT = int(entry2.get())
-                        SENDERPORT = int(entry3.get())
-                        s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
-                        s.bind((HOST, SENDERPORT))
-                        ttl_bin = struct.pack("@i", MYTTL)
-                        s.setsockopt(IPPROTO_IP, IP_MULTICAST_TTL, ttl_bin)
-                        s.setsockopt(
-                            IPPROTO_IP,
-                            IP_ADD_MEMBERSHIP,
-                            inet_aton(MYGROUP) + inet_aton(HOST),
-                        )  # 加入到组播组
-                        self.father.send_socket = s
-
-                        # 监听socket
-                        so = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
-                        so.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-                        so.bind((HOST, MYPORT))
-                        so.setsockopt(
-                            IPPROTO_IP,
-                            IP_ADD_MEMBERSHIP,
-                            inet_aton(MYGROUP) + inet_aton(HOST),
-                        )
-                        so.setblocking(FALSE)
-                        self.father.recv_socket = so
-
-                    except Exception as e:
-                        self.father.father.error_window("该地址不可使用")
-                    else:
-                        BroadListenThread = self.father.BroadListenThread(self.father)
-                        BroadListenThread.start()
-                        self.father.BroadListenThread = BroadListenThread
-                        mywindow.destroy()
-
-                """修改组播地址"""
-                mywindow = Tk()
-                mywindow.geometry("270x120")
-                mywindow.title("请修改组播设置")
-                Label(mywindow, text="组播地址: ").grid(row=0, column=0)
-                Label(mywindow, text="监听端口: ").grid(row=1, column=0)
-                Label(mywindow, text="本地端口: ").grid(row=2, column=0)
-                entry1 = Entry(mywindow)
-                entry1.grid(row=0, column=1)
-                entry1.insert(END, MYGROUP)
-                entry2 = Entry(mywindow)
-                entry2.grid(row=1, column=1)
-                entry2.insert(END, MYPORT)
-                entry3 = Entry(mywindow)
-                entry3.grid(row=2, column=1)
-                entry3.insert(END, SENDERPORT)
-                Button(
-                    mywindow,
-                    text="确定",
-                    command=lambda: set_address(entry1, entry2, entry3, self, mywindow),
-                ).grid(row=3, column=0, columnspan=2)
-
-                mywindow.mainloop()
-
-            def send_broad(self, msg, entry_input, username):
-                send_socket = self.father.send_socket
-                if not send_socket:
-                    self.change_address()
-                else:
-                    data = {"type": "broadChat", "msg": msg, "from": username}
-                    raw_data = json.dumps(data).encode()
-                    send_socket.sendto(raw_data, (MYGROUP, MYPORT))
-
-                    # 清空输入框
-                    entry_input.delete(0, END)
 
             def send_file(self, socket, label_target):
                 """点击发送文件按钮"""
@@ -358,21 +310,28 @@ class Client:
                 except:
                     pass
 
+            def destroy(self):
+                self.window.destroy()
+
             def __main__(self):
                 father = self.father
-                mywindow = Tk()
-                screenwidth = mywindow.winfo_screenwidth()
-                screenheight = mywindow.winfo_screenheight()
+                window = Tk()
+                screenwidth = window.winfo_screenwidth()
+                screenheight = window.winfo_screenheight()
                 width = 600
                 height = 400
-                alignstr = '%dx%d+%d+%d' % (width, height, (screenwidth-width)/2, (screenheight-height)/2)
-                mywindow.geometry(alignstr)
-                mywindow.title("聊天室")
-                mywindow.resizable(width=False, height=False)
+                alignstr = '%dx%d+%d+%d' % (width, height,
+                                            (screenwidth-width)/2, (screenheight-height)/2)
+                window.geometry(alignstr)
+                window.title("聊天室")
+                window.resizable(width=True, height=True)
+                self.window = window
+
                 # 背景
-                f = Frame(mywindow, bg="#EEEEEE", width=600, height=400)
+                f = Frame(window, bg="#EEEEEE", width=600, height=400)
                 #f.place(x=0, y=0)
                 f.pack()
+
                 # 聊天内容框
                 text_box = Text(
                     f,
@@ -385,20 +344,22 @@ class Client:
                 text_box.bind("<KeyPress>", lambda x: "break")
                 father.text_box = text_box
                 text_box.focus_set()
+
                 # 右侧选择聊天对象
-                Label(f, text="双击选择发送对象:", bg="#EEEEEE").place(x=460, y=10, anchor=NW)
+                Label(f, text="双击选择发送对象:", bg="#EEEEEE").place(
+                    x=460, y=10, anchor=NW
+                )
                 listbox = Listbox(f, width=13, height=13, bg="#FFFFFF")
                 listbox.place(x=460, y=35, anchor=NW)
                 father.listbox = listbox
+
+                # 刷新列表
                 button_refresh = Button(
-                    f, text="刷新列表",bd=1, relief=FLAT,command=lambda: self.refresh(father.socket)
+                    f, text="刷新列表", bd=1, relief=FLAT, command=lambda: self.refresh(father.socket)
                 )
                 button_refresh.place(x=515, y=290, anchor=CENTER)
-                button_clear = Button(
-                    f, text="清屏", command=lambda: text_box.delete(0.0, END)
-                )
-                button_clear.place(x=560, y=372, anchor=CENTER)
-                # 下方内容输入
+
+                # 下方内容输入框
                 label_target = Label(f, text="群聊", bg="#FFFFFF", width=8)
                 label_target.place(x=12, y=360)
                 listbox.bind(
@@ -406,21 +367,44 @@ class Client:
                     lambda x: self.change_target(listbox, label_target),
                 )
                 self.label_target = label_target
-                entry_input = Entry(f, width=37)
+                entry_input = Entry(f, width=30)
                 entry_input.place(x=90, y=358)
                 entry_input.bind(
                     "<Key-Return>",
-                    lambda x: self.send(father.socket, label_target, entry_input),
+                    lambda x: self.send(
+                        father.socket, label_target, entry_input),
                 )
                 self.et_input = entry_input
+
+                # 清屏按钮
+                button_clear = Button(
+                    f, text="清屏", command=lambda: text_box.delete(0.0, END)
+                )
+                button_clear.place(x=480, y=372, anchor=CENTER)
+
                 # 发送按钮
                 button_send = Button(
                     f,
-                    text="确认",
-                    command=lambda: self.send(father.socket, label_target, entry_input),
+                    text="发送",
+                    command=lambda: self.send(
+                        father.socket, label_target, entry_input),
                 )
-                button_send.place(x=480, y=371, anchor=CENTER)
+                button_send.place(x=400, y=371, anchor=CENTER)
+
+                # ! 退出按钮🔘
+                button_send = Button(
+                    f,
+                    text="退出",
+                    command=self.father.exit,
+                )
+                button_send.place(x=560, y=371, anchor=CENTER)
+
+                # surprise!
+                label_target = Label(f, text="操你妈", bg="#FFFFFF", width=8)
+                label_target.place(x=500, y=500)
+
                 # ! button send file
+                # 发送文件
                 button_send_file = Button(
                     f, text="发送文件", command=lambda: self.send_file(father.socket, label_target)
                 )
@@ -429,26 +413,15 @@ class Client:
                 # 刷新列表
                 self.refresh(father.socket)
 
-                mywindow.mainloop()
+                window.mainloop()
 
-                father.socket.shutdown(2)
-                try:
-                    father.BroadListenThread.stop()
-                    father.send_socket.sendto("", (MYGROUP, MYPORT))  # fake send
-                except:
-                    pass
-
-        def __main__(self):
-            # 开启监听线程
-            listen_thread = self.ListenThread(self.socket, self)
-            listen_thread.start()
-            self.ListenThread = listen_thread
-
-
-            # 建立窗口
-            window = self.Window(self)
-            window.__main__()
-            self.window = window
+                # father.socket.shutdown(2)
+                # try:
+                #     father.BroadListenThread.stop()
+                #     father.send_socket.sendto(
+                #         "", (MYGROUP, MYPORT))  # fake send
+                # except:
+                #     pass
 
     def __main__(self):
         # pass
