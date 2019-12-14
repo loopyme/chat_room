@@ -1,37 +1,34 @@
-# /usr/bin/python2.7
-# -*- coding: utf-8 -*-
-# Author: Hurray(hurray0@icloud.com)
-# Date: 2017.05.28
-
 from socket import *
 import threading
 import json
+from Crypto.Cipher import AES
+import hashlib,datetime
 
 HOST = ""
 PORT = 8945
 BUFFERSIZE = 2048
 ADDR = (HOST, PORT)
 
-
-from Crypto.Cipher import AES
-from binascii import b2a_hex, a2b_hex
-
-
-class crypt:
-    def __init__(self, key):
-        pass
+class Crypt:
 
     @staticmethod
-    def encrypt(username, text):
-        key = hash(username)
-        text += '\0' * 16 - (len(text) % 16)
-        return AES.new(key, AES.MODE_CBC, key).encrypt(text)
+    def __key():
+        sha256 = hashlib.sha256()
+        sha256.update(str(datetime.date.today()).encode('utf-8'))
+        return sha256.hexdigest()[16:32].encode()
+        
+
+    @staticmethod
+    def en(text):
+        key = Crypt.__key()
+        text += '\0' *(16 - (len(text.encode()) % 16))
+        return AES.new(key, AES.MODE_CBC, key).encrypt(text.encode())
      
     @staticmethod
-    def decrypt(username, text):
-        key = hash(username)
-        plain_text = AES.new(key, AES.MODE_CBC, key).decrypt(a2b_hex(text))
-        return plain_text.rstrip('\0')
+    def de(text):
+        key = Crypt.__key()
+        plain_text = AES.new(key, AES.MODE_CBC, key).decrypt(text)
+        return plain_text.decode().rstrip('\0')
 
 
 class User:
@@ -57,7 +54,7 @@ class MsgHandler:
     def send_json_to_users(users, data):
         raw_data = json.dumps(data)
         for user in users:
-            user.client_socket.send(raw_data.encode())
+            user.client_socket.send(Crypt.en(raw_data))
         log("[send_json_to_users] " + raw_data, "SUCCESS")
 
     @staticmethod
@@ -67,7 +64,7 @@ class MsgHandler:
 
     def send_json_back(self, data):
         raw_data = json.dumps(data)
-        self.user.client_socket.send(raw_data.encode())
+        self.user.client_socket.send(Crypt.en(raw_data))
         log("[send_to_user] " + raw_data, "SUCCESS")
 
     @staticmethod
@@ -88,27 +85,19 @@ class MsgHandler:
     def group_msg(data):
         MsgHandler.send_json_to_users(MsgHandler.user_pool.keys(), data)
 
-    @staticmethod
-    def private_bin(data, user):
-        MsgHandler.send_bin_to_user(user, data)
-
-    @staticmethod
-    def group_bin(data, user_list):
-        MsgHandler.send_bin_to_users(user_list, data)
-
     def recv_ack(self):
-        raw_data = self.user.client_socket.recv(BUFFERSIZE).decode()
+        raw_data = Crypt.de(self.user.client_socket.recv(BUFFERSIZE))
         if json.loads(raw_data)["type"] == "ack":
             return
 
     def send_ack(self):
-        self.user.client_socket.send(json.dumps({"type": "ack"}).encode())
+        self.user.client_socket.send(Crypt.en(json.dumps({"type": "ack"})))
 
     def private_file(self, data):
         target = data["to"]
         file_remain_size = data["size"]
 
-        user = [k for k, v in MsgHandler.user_pool.items() if v == target]
+        user = [k for k, v in MsgHandler.user_pool.items() if v == target][0]
 
         self.send_ack()
 
@@ -124,7 +113,7 @@ class MsgHandler:
 
         # ! send file head
         self.send_json_to_user(
-            user,
+            target,
             {
                 "type": "file",
                 "from": MsgHandler.user_pool[self.user],
@@ -134,7 +123,7 @@ class MsgHandler:
         )
 
         self.recv_ack()
-        self.send_bin_to_user(user, bin_data)
+        self.send_bin_to_user(user,bin_data)
 
     def group_file(self, data):
 
@@ -147,7 +136,7 @@ class MsgHandler:
             )
             file_remain_size -= len(buffer)
             bin_data += buffer
-            if not data:
+            if not buffer:
                 break
 
         # ! send file head
@@ -162,7 +151,7 @@ class MsgHandler:
         )
 
         self.recv_ack()
-        self.send_bin_to_users(MsgHandler.user_pool.keys(), bin_data)
+        self.send_bin_to_users(MsgHandler.user_pool.keys(),bin_data)
 
     def login(self, data):
         if self.user in MsgHandler.user_pool.keys():  # already login
@@ -200,6 +189,7 @@ class MsgHandler:
             "logout": self.logout,
             "private_file": self.private_file,
             "group_file": self.group_file,
+            "ack":lambda x: None,
         }
         try:
             return switcher[data["type"]](data)
@@ -219,7 +209,7 @@ class ClientThread(threading.Thread):
         try:
             handler = MsgHandler(self.user)  # handler input
             while True:
-                raw_data = self.user.client_socket.recv(BUFFERSIZE).decode()
+                raw_data = Crypt.de(self.user.client_socket.recv(BUFFERSIZE))
                 rec_data = json.loads(raw_data)
                 log("receive " + raw_data)
                 if rec_data["type"] == "logout":

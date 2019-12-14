@@ -5,6 +5,8 @@ from tkinter.filedialog import askopenfilename
 import threading
 import struct
 import uuid
+from Crypto.Cipher import AES
+import hashlib,datetime
 
 SENDERPORT = 1501
 HOST = "127.0.0.1"  # 'chat.loopy.tech'
@@ -12,7 +14,26 @@ PORT = 8945
 BUFFERSIZE = 2048
 ADDR = (HOST, PORT)
 
+class Crypt:
 
+    @staticmethod
+    def __key():
+        sha256 = hashlib.sha256()
+        sha256.update(str(datetime.date.today()).encode('utf-8'))
+        return sha256.hexdigest()[16:32].encode()
+        
+
+    @staticmethod
+    def en(text):
+        key = Crypt.__key()
+        text += '\0' *(16 - (len(text.encode()) % 16))
+        return AES.new(key, AES.MODE_CBC, key).encrypt(text.encode())
+     
+    @staticmethod
+    def de(text):
+        key = Crypt.__key()
+        plain_text = AES.new(key, AES.MODE_CBC, key).decrypt(text)
+        return plain_text.decode().rstrip('\0')
 class Client:
     def __init__(self):
         self.is_connect = False
@@ -60,7 +81,7 @@ class Client:
             username = entry.get()
             self.father.username = username
             data = {"type": "login", "username": username}
-            raw_data = json.dumps(data).encode()
+            raw_data = Crypt.en(json.dumps(data))
             try:
                 self.father.connect()
             except Exception as e:
@@ -69,7 +90,7 @@ class Client:
             else:
                 socket = self.father.client_socket
                 socket.send(raw_data)
-                raw_data = socket.recv(BUFFERSIZE).decode()
+                raw_data = Crypt.de(socket.recv(BUFFERSIZE))
                 recv_data = json.loads(raw_data)
                 if (
                     recv_data["type"] == "login"
@@ -147,7 +168,7 @@ class Client:
             def run(self):
                 while True:
                     try:
-                        raw_data = self.socket.recv(BUFFERSIZE).decode()
+                        raw_data = Crypt.de(self.socket.recv(BUFFERSIZE))
                         data = json.loads(raw_data)
                     except:
                         break
@@ -157,12 +178,12 @@ class Client:
                         "group_msg": self.chat,
                         "ping": self.ping,
                         "file": self.recv_file,
-                        "ack": lambda: None,
+                        "ack": lambda x: None,
                     }
                     switcher[data["type"]](data)
 
             def send_ack(self):
-                self.socket.send(json.dumps({"type": "ack"}).encode())
+                self.socket.send(Crypt.en(json.dumps({"type": "ack"})))
 
             def recv_file(self, data):
                 # print("[RECV_FILE]")
@@ -226,7 +247,7 @@ class Client:
             def refresh(socket):
                 """点击刷新按钮"""
                 data = {"type": "list"}
-                raw_data = json.dumps(data).encode()
+                raw_data = Crypt.en(json.dumps(data))
                 socket.send(raw_data)
 
             def send_file(self, socket, label_target):
@@ -253,7 +274,7 @@ class Client:
                         "to": target,
                     }
                     t = "[->" + target + "] " + "File Sent" + "\n"
-                raw_data = json.dumps(header).encode()
+                raw_data = Crypt.en(json.dumps(header))
                 socket.send(raw_data)
 
                 self.recv_ack(socket)
@@ -264,7 +285,7 @@ class Client:
 
             @staticmethod
             def recv_ack(socket):
-                raw_data = socket.recv(BUFFERSIZE).decode()
+                raw_data = Crypt.de(socket.recv(BUFFERSIZE))
                 if json.loads(raw_data)["type"] == "ack":
                     return
 
@@ -286,7 +307,7 @@ class Client:
                     text_box = self.father.text_box
                     t = "[->" + target + "]" + text + "\n"
                     text_box.insert(END, t)
-                raw_data = json.dumps(data).encode()
+                raw_data = Crypt.en(json.dumps(data))
                 socket.send(raw_data)
                 entry_input.delete(0, END)
 
