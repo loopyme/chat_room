@@ -38,6 +38,7 @@ class User:
 
 class MsgHandler:
     user_pool = {}  # user: username
+    ack_buffer = []
 
     def __init__(self, user):
         self.user = user
@@ -94,13 +95,21 @@ class MsgHandler:
         return bin_data
 
     def send_ack(self):
+        print("=" * 32 + "server send_ack")
         self.user.client_socket.send(Crypt.en(json.dumps({"type": "ack"})))
 
-    @staticmethod
-    def recv_ack(user):
-        raw_data = Crypt.de(user.client_socket.recv(BUFFERSIZE))
-        if json.loads(raw_data)["type"] == "ack":
-            return
+    def recv_ack(self, user):
+        if user.address != self.user.address:
+            while True:
+                if user in MsgHandler.ack_buffer:
+                    MsgHandler.ack_buffer.remove(user)
+                    print("=" * 32 + "server recv_ack")
+                    return
+        else:
+            raw_data = Crypt.de(user.client_socket.recv(BUFFERSIZE))
+            if json.loads(raw_data)["type"] == "ack":
+                print("=" * 32 + "server recv_ack")
+                return
 
     @staticmethod
     def private_msg(data):
@@ -166,7 +175,7 @@ class MsgHandler:
             "group_msg": self.group_msg,
             "private_file": self.private_file,
             "group_file": self.group_file,
-            "ack": lambda x: print('shit'),
+            "ack": lambda x: MsgHandler.ack_buffer.append(self.user),
         }
         try:
             return switcher[data["type"]](data)

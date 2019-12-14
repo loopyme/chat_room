@@ -207,7 +207,7 @@ class Client:
                         "group_msg": self.chat,
                         "ping": self.ping,
                         "file": self.recv_file,
-                        "ack": lambda x: None,
+                        "ack": lambda x: print('shit'),
                     }
                     switcher[data["type"]](data)
 
@@ -317,6 +317,7 @@ class Client:
             def recv_ack(socket):
                 raw_data = Crypt.de(socket.recv(BUFFERSIZE))
                 if json.loads(raw_data)["type"] == "ack":
+                    print("="*32+"client recv_ack")
                     return
 
             def send(self, socket, label_target, entry_input):
