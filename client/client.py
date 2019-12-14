@@ -11,7 +11,7 @@ MYPORT = 1234
 MYGROUP = "224.1.1.1"
 HOST = "127.0.0.1"  # 'chat.loopy.tech'
 PORT = 8945
-BUFFERSIZE = 1024*1024*2
+BUFFERSIZE = 1024 * 1024 * 2
 ADDR = (HOST, PORT)
 MYTTL = 255
 
@@ -35,16 +35,21 @@ class Client:
     def error_window(info):
         """错误提示界面"""
         error_window = Tk()
-        screenwidth =  error_window.winfo_screenwidth()
+        screenwidth = error_window.winfo_screenwidth()
         screenheight = error_window.winfo_screenheight()
-        width=200
-        height=120
-        alignstr = '%dx%d+%d+%d' % (width, height, (screenwidth-width)/2, (screenheight-height)/2)
+        width = 200
+        height = 120
+        alignstr = "%dx%d+%d+%d" % (
+            width,
+            height,
+            (screenwidth - width) / 2,
+            (screenheight - height) / 2,
+        )
         error_window.geometry(alignstr)
         error_window.title("错误")
         Label(error_window, text=info).pack(padx=5, pady=20, fill="x")
-        button=Button(error_window, text="确定", command=error_window.destroy)
-        button.place(relx=0.3,rely=0.5,relwidth=0.4,relheight=0.3)
+        button = Button(error_window, text="确定", command=error_window.destroy)
+        button.place(relx=0.3, rely=0.5, relwidth=0.4, relheight=0.3)
         error_window.mainloop()
 
     class Login:
@@ -70,9 +75,9 @@ class Client:
                 raw_data = socket.recv(BUFFERSIZE).decode()
                 recv_data = json.loads(raw_data)
                 if (
-                        recv_data["type"] == "login"
-                        and recv_data["username"] == username
-                        and recv_data["status"] == True
+                    recv_data["type"] == "login"
+                    and recv_data["username"] == username
+                    and recv_data["status"] == True
                 ):
                     # login success!
                     mainFrame = self.father.MainFrame(self.father)
@@ -88,27 +93,37 @@ class Client:
         def window(self):
             """登录窗口GUI"""
             mywindow = Tk()
-            #mycanvas=Canvas(mywindow,width=580,height=400,bg='red')
-            #mycanvas.pack()
-            #mywindow.attributes("bg",red)
+            # mycanvas=Canvas(mywindow,width=580,height=400,bg='red')
+            # mycanvas.pack()
+            # mywindow.attributes("bg",red)
             screenwidth = mywindow.winfo_screenwidth()
             screenheight = mywindow.winfo_screenheight()
             width = 580
             height = 400
-            alignstr = '%dx%d+%d+%d' % (width, height, (screenwidth-width)/2, (screenheight-height)/2)
+            alignstr = "%dx%d+%d+%d" % (
+                width,
+                height,
+                (screenwidth - width) / 2,
+                (screenheight - height) / 2,
+            )
             mywindow.geometry(alignstr)
             mywindow.title("登录")
             mywindow.resizable(width=False, height=False)
-            #frame = Frame(mywindow)
-            #frame.pack(expand=YES, fill=BOTH)
-            lable=Label(mywindow, font="Arial, 20", text="请输入用户名", anchor="n").pack(
+            # frame = Frame(mywindow)
+            # frame.pack(expand=YES, fill=BOTH)
+            lable = Label(mywindow, font="Arial, 20", text="请输入用户名", anchor="n").pack(
                 padx=10, pady=15, fill="x"
             )
-            entry = Entry(mywindow,font=17)
-            entry.place(relx=0.05,rely=0.15,relwidth=0.9,relheight=0.1)
+            entry = Entry(mywindow, font=17)
+            entry.place(relx=0.05, rely=0.15, relwidth=0.9, relheight=0.1)
             entry.bind("<Key-Return>", lambda x: self.login(entry, mywindow))
-            button = Button(mywindow, text="登录",font=50,command=lambda: self.login(entry, mywindow))
-            button.place(relx=0.4,rely=0.3,relheight=0.1,relwidth=0.2)
+            button = Button(
+                mywindow,
+                text="登录",
+                font=50,
+                command=lambda: self.login(entry, mywindow),
+            )
+            button.place(relx=0.4, rely=0.3, relheight=0.1, relwidth=0.2)
 
             mywindow.mainloop()
 
@@ -152,25 +167,26 @@ class Client:
 
                 print("[RECV_FILE]")
 
-                file_remain_size = data['size']
-                file_ext = data['ext']
-                file_sender = data['from']
-                bin_data = b''
+                file_remain_size = data["size"]
+                file_ext = data["ext"]
+                file_sender = data["from"]
+                bin_data = b""
                 while file_remain_size > 0:
                     buffer = self.socket.recv(
-                        BUFFERSIZE if file_remain_size > BUFFERSIZE else file_remain_size)
+                        BUFFERSIZE
+                        if file_remain_size > BUFFERSIZE
+                        else file_remain_size
+                    )
                     file_remain_size -= len(buffer)
                     bin_data += buffer
                     if not buffer:
                         break
 
-                
-
-                file_name = './' + str(uuid.uuid4()) + '.' + file_ext
+                file_name = "./" + str(uuid.uuid4()) + "." + file_ext
 
                 print(file_name, file_remain_size)
 
-                with open(file_name, 'wb') as f:
+                with open(file_name, "wb") as f:
                     f.write(bin_data)
 
                 text_box = self.father.text_box
@@ -190,17 +206,16 @@ class Client:
                 """接收聊天信息并打印"""
                 text_box = self.father.text_box
                 text = (
-                        ("[群聊]" if data["type"] == "group_msg" else "")
-                        + data["from"]
-                        + ": "
-                        + data["msg"]
-                        + "\n"
+                    ("[群聊]" if data["type"] == "group_msg" else "")
+                    + data["from"]
+                    + ": "
+                    + data["msg"]
+                    + "\n"
                 )
                 text_box.insert(END, text)
 
             def ping(self):
                 pass
-
 
         class Window:
             def __init__(self, father):
@@ -298,8 +313,8 @@ class Client:
                 target = label_target["text"]
                 filename = askopenfilename()
                 # print(filename)
-                ext = filename.split('.')[-1]
-                with open(filename, 'rb') as f:
+                ext = filename.split(".")[-1]
+                with open(filename, "rb") as f:
                     data = f.read()
                 size = len(data)
                 if target == "群聊":
@@ -320,6 +335,7 @@ class Client:
                 raw_data = json.dumps(header).encode()
                 socket.send(raw_data)
                 import time
+
                 time.sleep(3)
                 socket.send(data)
                 text_box = self.father.text_box
@@ -365,22 +381,21 @@ class Client:
                 screenheight = mywindow.winfo_screenheight()
                 width = 600
                 height = 400
-                alignstr = '%dx%d+%d+%d' % (width, height, (screenwidth-width)/2, (screenheight-height)/2)
+                alignstr = "%dx%d+%d+%d" % (
+                    width,
+                    height,
+                    (screenwidth - width) / 2,
+                    (screenheight - height) / 2,
+                )
                 mywindow.geometry(alignstr)
                 mywindow.title("聊天室")
                 mywindow.resizable(width=False, height=False)
                 # 背景
                 f = Frame(mywindow, bg="#EEEEEE", width=600, height=400)
-                #f.place(x=0, y=0)
+                # f.place(x=0, y=0)
                 f.pack()
                 # 聊天内容框
-                text_box = Text(
-                    f,
-                    bg="#FFFFFF",
-                    width=60,
-                    height=22,
-                    bd=0,
-                )
+                text_box = Text(f, bg="#FFFFFF", width=60, height=22, bd=0,)
                 text_box.place(x=10, y=10, anchor=NW)
                 text_box.bind("<KeyPress>", lambda x: "break")
                 father.text_box = text_box
@@ -391,7 +406,11 @@ class Client:
                 listbox.place(x=460, y=35, anchor=NW)
                 father.listbox = listbox
                 button_refresh = Button(
-                    f, text="刷新列表",bd=1, relief=FLAT,command=lambda: self.refresh(father.socket)
+                    f,
+                    text="刷新列表",
+                    bd=1,
+                    relief=FLAT,
+                    command=lambda: self.refresh(father.socket),
                 )
                 button_refresh.place(x=515, y=290, anchor=CENTER)
                 button_clear = Button(
@@ -422,7 +441,9 @@ class Client:
                 button_send.place(x=480, y=371, anchor=CENTER)
                 # ! button send file
                 button_send_file = Button(
-                    f, text="发送文件", command=lambda: self.send_file(father.socket, label_target)
+                    f,
+                    text="发送文件",
+                    command=lambda: self.send_file(father.socket, label_target),
                 )
                 button_send_file.place(x=515, y=330, anchor=CENTER)
 
@@ -443,7 +464,6 @@ class Client:
             listen_thread = self.ListenThread(self.socket, self)
             listen_thread.start()
             self.ListenThread = listen_thread
-
 
             # 建立窗口
             window = self.Window(self)

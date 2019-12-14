@@ -9,7 +9,7 @@ import json
 
 HOST = ""
 PORT = 8945
-BUFFERSIZE = 1024*2
+BUFFERSIZE = 1024 * 2
 ADDR = (HOST, PORT)
 
 
@@ -41,8 +41,7 @@ class MsgHandler:
 
     @staticmethod
     def send_json_to_user(username, data):
-        user_list = [k for k, v in MsgHandler.user_pool.items()
-                     if v == username]
+        user_list = [k for k, v in MsgHandler.user_pool.items() if v == username]
         MsgHandler.send_json_to_users(user_list, data)
 
     def send_json_back(self, data):
@@ -77,54 +76,63 @@ class MsgHandler:
         MsgHandler.send_bin_to_users(user_list, data)
 
     def private_file(self, data):
-        target = data['to']
-        file_remain_size = data['size']
+        target = data["to"]
+        file_remain_size = data["size"]
 
         user = [k for k, v in MsgHandler.user_pool.items() if v == target]
 
-        bin_data = b''
+        bin_data = b""
         while file_remain_size > 0:
             buffer = self.user.client_socket.recv(
-                BUFFERSIZE if file_remain_size > BUFFERSIZE else file_remain_size)
+                BUFFERSIZE if file_remain_size > BUFFERSIZE else file_remain_size
+            )
             file_remain_size -= len(buffer)
             bin_data += buffer
             if not buffer:
                 break
 
         # ! send file head
-        self.send_json_to_user(user, {
-            "type": "file",
-            "from": MsgHandler.user_pool[self.user],
-            "size": data['size'],
-            "ext": data['ext'],
-        })
+        self.send_json_to_user(
+            user,
+            {
+                "type": "file",
+                "from": MsgHandler.user_pool[self.user],
+                "size": data["size"],
+                "ext": data["ext"],
+            },
+        )
         import time
+
         time.sleep(3)
 
         self.send_bin_to_user(user, bin_data)
 
     def group_file(self, data):
 
-        file_remain_size = data['size']
+        file_remain_size = data["size"]
 
-        bin_data = b''
+        bin_data = b""
         while file_remain_size > 0:
             buffer = self.user.client_socket.recv(
-                BUFFERSIZE if file_remain_size > BUFFERSIZE else file_remain_size)
+                BUFFERSIZE if file_remain_size > BUFFERSIZE else file_remain_size
+            )
             file_remain_size -= len(buffer)
             bin_data += buffer
             if not data:
                 break
 
         # ! send file head
-        self.send_json_to_users(MsgHandler.user_pool.keys(),{
-            "type": "file",
-            "from": MsgHandler.user_pool[self.user],
-            "size": data['size'],
-            "ext": data['ext'],
-        })
+        self.send_json_to_users(
+            MsgHandler.user_pool.keys(),
+            {
+                "type": "file",
+                "from": MsgHandler.user_pool[self.user],
+                "size": data["size"],
+                "ext": data["ext"],
+            },
+        )
 
-        self.send_bin_to_users(MsgHandler.user_pool.keys(),bin_data)
+        self.send_bin_to_users(MsgHandler.user_pool.keys(), bin_data)
 
     def login(self, data):
         if self.user in MsgHandler.user_pool.keys():  # already login
@@ -139,8 +147,10 @@ class MsgHandler:
         self.send_json_back(data)
 
     def logout(self, data):
-        log("[log_out] user:{} logout".format(
-            MsgHandler.user_pool[self.user]), "SUCCESS")
+        log(
+            "[log_out] user:{} logout".format(MsgHandler.user_pool[self.user]),
+            "SUCCESS",
+        )
         MsgHandler.user_pool.pop(self.user)
 
     def ping(self):
@@ -192,8 +202,7 @@ class ClientThread(threading.Thread):
                 log("[Connect Failed] {}".format(e), "ERROR")
         finally:
             log(
-                "[log_out] user:{} logout".format(
-                    MsgHandler.user_pool[self.user]),
+                "[log_out] user:{} logout".format(MsgHandler.user_pool[self.user]),
                 "SUCCESS",
             )
             MsgHandler.remove_user(self.user)
