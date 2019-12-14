@@ -6,7 +6,7 @@ import threading
 import struct
 import uuid
 from Crypto.Cipher import AES
-import hashlib,datetime
+import hashlib, datetime
 
 SENDERPORT = 1501
 HOST = "127.0.0.1"  # 'chat.loopy.tech'
@@ -14,26 +14,27 @@ PORT = 8945
 BUFFERSIZE = 2048
 ADDR = (HOST, PORT)
 
-class Crypt:
 
+class Crypt:
     @staticmethod
     def __key():
         sha256 = hashlib.sha256()
-        sha256.update(str(datetime.date.today()).encode('utf-8'))
+        sha256.update(str(datetime.date.today()).encode("utf-8"))
         return sha256.hexdigest()[16:32].encode()
-        
 
     @staticmethod
     def en(text):
         key = Crypt.__key()
-        text += '\0' *(16 - (len(text.encode()) % 16))
+        text += "\0" * (16 - (len(text.encode()) % 16))
         return AES.new(key, AES.MODE_CBC, key).encrypt(text.encode())
-     
+
     @staticmethod
     def de(text):
         key = Crypt.__key()
         plain_text = AES.new(key, AES.MODE_CBC, key).decrypt(text)
-        return plain_text.decode().rstrip('\0')
+        return plain_text.decode().rstrip("\0")
+
+
 class Client:
     def __init__(self):
         self.connected = False
@@ -57,8 +58,12 @@ class Client:
         screenheight = error_window.winfo_screenheight()
         width = 200
         height = 120
-        alignstr = '%dx%d+%d+%d' % (width, height,
-                                    (screenwidth-width)/2, (screenheight-height)/2)
+        alignstr = "%dx%d+%d+%d" % (
+            width,
+            height,
+            (screenwidth - width) / 2,
+            (screenheight - height) / 2,
+        )
         error_window.geometry(alignstr)
         error_window.title("错误")
         Label(error_window, text=error_info).pack(padx=5, pady=20, fill="x")
@@ -113,13 +118,17 @@ class Client:
             screenheight = window.winfo_screenheight()
             width = 580
             height = 400
-            alignstr = '%dx%d+%d+%d' % (width, height,
-                                        (screenwidth-width)/2, (screenheight-height)/2)
+            alignstr = "%dx%d+%d+%d" % (
+                width,
+                height,
+                (screenwidth - width) / 2,
+                (screenheight - height) / 2,
+            )
             window.geometry(alignstr)
             window.title("登录")
             window.resizable(width=False, height=False)
-            #frame = Frame(window)
-            #frame.pack(expand=YES, fill=BOTH)
+            # frame = Frame(window)
+            # frame.pack(expand=YES, fill=BOTH)
 
             # Label
             lable = Label(window, font="Arial, 20", text="请输入用户名", anchor="n").pack(
@@ -128,14 +137,18 @@ class Client:
 
             # Username Entry
             username_entry = Entry(window, font=17)
-            username_entry.place(relx=0.05, rely=0.15,
-                                 relwidth=0.9, relheight=0.1)
+            username_entry.place(relx=0.05, rely=0.15, relwidth=0.9, relheight=0.1)
             username_entry.bind(
-                "<Key-Return>", lambda x: self.login(username_entry.get(), window))
+                "<Key-Return>", lambda x: self.login(username_entry.get(), window)
+            )
 
             # Login Button
-            button = Button(window, text="登录", font=50, command=lambda: self.login(
-                username_entry.get(), window))
+            button = Button(
+                window,
+                text="登录",
+                font=50,
+                command=lambda: self.login(username_entry.get(), window),
+            )
             button.place(relx=0.2, rely=0.3, relheight=0.1, relwidth=0.2)
 
             # Exit Button
@@ -200,6 +213,7 @@ class Client:
 
             def send_ack(self):
                 self.socket.send(Crypt.en(json.dumps({"type": "ack"})))
+                print('send_ack'+"="*64)
 
             def recv_file(self, data):
                 # print("[RECV_FILE]")
@@ -351,11 +365,11 @@ class Client:
                     (screenwidth - width) / 2,
                     (screenheight - height) / 2,
                 )
-                mywindow.geometry(alignstr)
-                mywindow.title("聊天室")
-                mywindow.resizable(width=False, height=False)
+                window.geometry(alignstr)
+                window.title("聊天室")
+                window.resizable(width=False, height=False)
                 # 背景
-                f = Frame(mywindow, bg="#EEEEEE", width=600, height=400)
+                f = Frame(window, bg="#EEEEEE", width=600, height=400)
                 # f.place(x=0, y=0)
                 f.pack()
 
@@ -367,9 +381,7 @@ class Client:
                 text_box.focus_set()
 
                 # 右侧选择聊天对象
-                Label(f, text="双击选择发送对象:", bg="#EEEEEE").place(
-                    x=460, y=10, anchor=NW
-                )
+                Label(f, text="双击选择发送对象:", bg="#EEEEEE").place(x=460, y=10, anchor=NW)
                 listbox = Listbox(f, width=13, height=13, bg="#FFFFFF")
                 listbox.place(x=460, y=35, anchor=NW)
                 father.listbox = listbox
@@ -396,8 +408,7 @@ class Client:
                 entry_input.place(x=90, y=358)
                 entry_input.bind(
                     "<Key-Return>",
-                    lambda x: self.send(
-                        father.socket, label_target, entry_input),
+                    lambda x: self.send(father.socket, label_target, entry_input),
                 )
                 self.et_input = entry_input
 
@@ -411,22 +422,13 @@ class Client:
                 button_send = Button(
                     f,
                     text="发送",
-                    command=lambda: self.send(
-                        father.socket, label_target, entry_input),
+                    command=lambda: self.send(father.socket, label_target, entry_input),
                 )
                 button_send.place(x=400, y=371, anchor=CENTER)
 
                 # ! 退出按钮🔘
-                button_send = Button(
-                    f,
-                    text="退出",
-                    command=self.father.exit,
-                )
+                button_send = Button(f, text="退出", command=self.father.exit,)
                 button_send.place(x=560, y=371, anchor=CENTER)
-
-                # surprise!
-                label_target = Label(f, text="操你妈", bg="#FFFFFF", width=8)
-                label_target.place(x=500, y=500)
 
                 # ! button send file
                 # 发送文件
@@ -441,7 +443,6 @@ class Client:
                 self.refresh(father.socket)
 
                 window.mainloop()
-
 
     def __main__(self):
         login = Client.Login(self)

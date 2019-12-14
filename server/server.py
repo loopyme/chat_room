@@ -2,33 +2,32 @@ from socket import *
 import threading
 import json
 from Crypto.Cipher import AES
-import hashlib,datetime
+import hashlib, datetime
 
 HOST = ""
 PORT = 8945
 BUFFERSIZE = 2048
 ADDR = (HOST, PORT)
 
-class Crypt:
 
+class Crypt:
     @staticmethod
     def __key():
         sha256 = hashlib.sha256()
-        sha256.update(str(datetime.date.today()).encode('utf-8'))
+        sha256.update(str(datetime.date.today()).encode("utf-8"))
         return sha256.hexdigest()[16:32].encode()
-        
 
     @staticmethod
     def en(text):
         key = Crypt.__key()
-        text += '\0' *(16 - (len(text.encode()) % 16))
+        text += "\0" * (16 - (len(text.encode()) % 16))
         return AES.new(key, AES.MODE_CBC, key).encrypt(text.encode())
-     
+
     @staticmethod
     def de(text):
         key = Crypt.__key()
         plain_text = AES.new(key, AES.MODE_CBC, key).decrypt(text)
-        return plain_text.decode().rstrip('\0')
+        return plain_text.decode().rstrip("\0")
 
 
 class User:
@@ -38,7 +37,7 @@ class User:
 
 
 class MsgHandler:
-    user_pool = {}  # user: user_pool
+    user_pool = {}  # user: username
 
     def __init__(self, user):
         self.user = user
@@ -51,107 +50,85 @@ class MsgHandler:
             log("[MsgHandler.remove_user] {}".format(e), "ERROR")
 
     @staticmethod
-    def send_json_to_users(users, data):
+    def send_json(users, data):
         raw_data = json.dumps(data)
         for user in users:
             user.client_socket.send(Crypt.en(raw_data))
-        log("[send_json_to_users] " + raw_data, "SUCCESS")
-
-    @staticmethod
-    def send_json_to_user(username, data):
-        user_list = [k for k, v in MsgHandler.user_pool.items() if v == username]
-        MsgHandler.send_json_to_users(user_list, data)
+        log("[send_json] " + raw_data, "SUCCESS")
 
     def send_json_back(self, data):
         raw_data = json.dumps(data)
         self.user.client_socket.send(Crypt.en(raw_data))
         log("[send_to_user] " + raw_data, "SUCCESS")
 
-    @staticmethod
-    def send_bin_to_users(users, bin_data):
+    def send_file(self, users, size, ext, bin_data):
         for user in users:
+            print(user)
+            # ! send file head
+            self.send_json(
+                [user],
+                {
+                    "type": "file",
+                    "from": MsgHandler.user_pool[self.user],
+                    "size": size,
+                    "ext": ext,
+                },
+            )
+
+            self.recv_ack(user)
             user.client_socket.send(bin_data)
-        log("[send_bin_to_users]", "SUCCESS")
+            log("[send_file] To:" + MsgHandler.user_pool[user], "SUCCESS")
 
-    @staticmethod
-    def send_bin_to_user(user, bin_data):
-        MsgHandler.send_bin_to_users([user], bin_data)
-
-    @staticmethod
-    def private_msg(data):
-        MsgHandler.send_json_to_user(data["to"], data)
-
-    @staticmethod
-    def group_msg(data):
-        MsgHandler.send_json_to_users(MsgHandler.user_pool.keys(), data)
-
-    def recv_ack(self):
-        raw_data = Crypt.de(self.user.client_socket.recv(BUFFERSIZE))
-        if json.loads(raw_data)["type"] == "ack":
-            return
+    def recv_file(self, size):
+        self.send_ack()
+        bin_data = b""
+        while size > 0:
+            buffer = self.user.client_socket.recv(
+                BUFFERSIZE if size > BUFFERSIZE else size
+            )
+            size -= len(buffer)
+            bin_data += buffer
+            if not buffer:
+                break
+        log("[recv_file] From:" + MsgHandler.user_pool[self.user], "SUCCESS")
+        return bin_data
 
     def send_ack(self):
         self.user.client_socket.send(Crypt.en(json.dumps({"type": "ack"})))
 
-    def private_file(self, data):
-        target = data["to"]
-        file_remain_size = data["size"]
+    @staticmethod
+    def recv_ack(user):
+        raw_data = Crypt.de(user.client_socket.recv(BUFFERSIZE))
+        if json.loads(raw_data)["type"] == "ack":
+            return
 
-        user = [k for k, v in MsgHandler.user_pool.items() if v == target][0]
-
-        self.send_ack()
-
-        bin_data = b""
-        while file_remain_size > 0:
-            buffer = self.user.client_socket.recv(
-                BUFFERSIZE if file_remain_size > BUFFERSIZE else file_remain_size
-            )
-            file_remain_size -= len(buffer)
-            bin_data += buffer
-            if not buffer:
-                break
-
-        # ! send file head
-        self.send_json_to_user(
-            target,
-            {
-                "type": "file",
-                "from": MsgHandler.user_pool[self.user],
-                "size": data["size"],
-                "ext": data["ext"],
-            },
+    @staticmethod
+    def private_msg(data):
+        MsgHandler.send_json(
+            [k for k, v in MsgHandler.user_pool.items() if v == data["to"]], data
         )
 
-        self.recv_ack()
-        self.send_bin_to_user(user,bin_data)
+    @staticmethod
+    def group_msg(data):
+        MsgHandler.send_json(MsgHandler.user_pool.keys(), data)
+
+    def private_file(self, data):
+        bin_data = self.recv_file(size=data["size"])
+        self.send_file(
+            users=[k for k, v in MsgHandler.user_pool.items() if v == data["to"]],
+            size=data["size"],
+            ext=data["ext"],
+            bin_data=bin_data,
+        )
 
     def group_file(self, data):
-
-        file_remain_size = data["size"]
-        self.send_ack()
-        bin_data = b""
-        while file_remain_size > 0:
-            buffer = self.user.client_socket.recv(
-                BUFFERSIZE if file_remain_size > BUFFERSIZE else file_remain_size
-            )
-            file_remain_size -= len(buffer)
-            bin_data += buffer
-            if not buffer:
-                break
-
-        # ! send file head
-        self.send_json_to_users(
-            MsgHandler.user_pool.keys(),
-            {
-                "type": "file",
-                "from": MsgHandler.user_pool[self.user],
-                "size": data["size"],
-                "ext": data["ext"],
-            },
+        bin_data = self.recv_file(size=data["size"])
+        self.send_file(
+            users=list(MsgHandler.user_pool.keys()),
+            size=data["size"],
+            ext=data["ext"],
+            bin_data=bin_data,
         )
-
-        self.recv_ack()
-        self.send_bin_to_users(MsgHandler.user_pool.keys(),bin_data)
 
     def login(self, data):
         if self.user in MsgHandler.user_pool.keys():  # already login
@@ -165,7 +142,7 @@ class MsgHandler:
             MsgHandler.user_pool[self.user] = data["username"]
         self.send_json_back(data)
 
-    def logout(self, data):
+    def logout(self, _):
         log(
             "[log_out] user:{} logout".format(MsgHandler.user_pool[self.user]),
             "SUCCESS",
@@ -182,14 +159,14 @@ class MsgHandler:
     def __main__(self, data):
         switcher = {
             "login": self.login,
+            "logout": self.logout,
             "ping": self.ping,
             "list": self.get_list,
             "private_msg": self.private_msg,
             "group_msg": self.group_msg,
-            "logout": self.logout,
             "private_file": self.private_file,
             "group_file": self.group_file,
-            "ack":lambda x: None,
+            "ack": lambda x: print('shit'),
         }
         try:
             return switcher[data["type"]](data)
@@ -229,7 +206,7 @@ class ClientThread(threading.Thread):
 
     def stop(self):
         try:
-            self.user.client_socket.shutdown(2)
+            # self.user.client_socket.shutdown(2)
             self.user.client_socket.close()
         except Exception as e:
             log("[ClientThread.stop] {}".format(e), "ERROR")
@@ -237,7 +214,8 @@ class ClientThread(threading.Thread):
 
 
 class Server:
-    def __main__(self):
+    @staticmethod
+    def __main__():
         server_socket = socket(AF_INET, SOCK_STREAM)
         server_socket.bind(ADDR)
         server_socket.listen(5)
@@ -272,4 +250,4 @@ def log(msg, type=None):
 
 
 if __name__ == "__main__":
-    Server().__main__()
+    Server.__main__()
