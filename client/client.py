@@ -7,13 +7,10 @@ import struct
 import uuid
 
 SENDERPORT = 1501
-MYPORT = 1234
-MYGROUP = "224.1.1.1"
 HOST = "127.0.0.1"  # 'chat.loopy.tech'
 PORT = 8945
-BUFFERSIZE = 1024 * 1024 * 2
+BUFFERSIZE = 2048
 ADDR = (HOST, PORT)
-MYTTL = 255
 
 
 class Client:
@@ -111,7 +108,7 @@ class Client:
             mywindow.resizable(width=False, height=False)
             # frame = Frame(mywindow)
             # frame.pack(expand=YES, fill=BOTH)
-            lable = Label(mywindow, font="Arial, 20", text="请输入用户名", anchor="n").pack(
+            lable_ = Label(mywindow, font="Arial, 20", text="请输入用户名", anchor="n").pack(
                 padx=10, pady=15, fill="x"
             )
             entry = Entry(mywindow, font=17)
@@ -160,13 +157,17 @@ class Client:
                         "group_msg": self.chat,
                         "ping": self.ping,
                         "file": self.recv_file,
+                        "ack": lambda: None,
                     }
                     switcher[data["type"]](data)
 
+            def send_ack(self):
+                self.socket.send(json.dumps({"type": "ack"}).encode())
+
             def recv_file(self, data):
+                # print("[RECV_FILE]")
 
-                print("[RECV_FILE]")
-
+                self.send_ack()
                 file_remain_size = data["size"]
                 file_ext = data["ext"]
                 file_sender = data["from"]
@@ -184,22 +185,22 @@ class Client:
 
                 file_name = "./" + str(uuid.uuid4()) + "." + file_ext
 
-                print(file_name, file_remain_size)
+                # print(file_name, file_remain_size)
 
                 with open(file_name, "wb") as f:
                     f.write(bin_data)
 
                 text_box = self.father.text_box
-                t = "[" + file_sender + "->]" + "发给了你一个文件：" + file_name[2:] + "\n"
+                t = "[" + file_sender + "]发给你了一个文件：" + file_name[2:] + "\n"
                 text_box.insert(END, t)
 
             def list(self, data):
                 """刷新列表"""
                 listbox = self.father.listbox
-                list = ["群聊"]
-                list += data["list"]
+                username_list = ["群聊"]
+                username_list += data["list"]
                 listbox.delete(0, END)  # 清空现有列表
-                for l in list:
+                for l in username_list:
                     listbox.insert(END, l)  # 插入新列表
 
             def chat(self, data):
@@ -228,86 +229,6 @@ class Client:
                 raw_data = json.dumps(data).encode()
                 socket.send(raw_data)
 
-            def change_address(self):
-                def set_address(entry1, entry2, entry3, self, mywindow):
-                    global MYPORT, MYGROUP
-                    if self.father.recv_socket:
-                        # 停止之前的地址
-                        self.father.BroadListenThread.stop()
-                        self.father.send_socket.sendto("".encode(), (MYGROUP, MYPORT))
-
-                    try:
-                        # 发送socket
-                        MYGROUP = entry1.get()
-                        MYPORT = int(entry2.get())
-                        SENDERPORT = int(entry3.get())
-                        s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
-                        s.bind((HOST, SENDERPORT))
-                        ttl_bin = struct.pack("@i", MYTTL)
-                        s.setsockopt(IPPROTO_IP, IP_MULTICAST_TTL, ttl_bin)
-                        s.setsockopt(
-                            IPPROTO_IP,
-                            IP_ADD_MEMBERSHIP,
-                            inet_aton(MYGROUP) + inet_aton(HOST),
-                        )  # 加入到组播组
-                        self.father.send_socket = s
-
-                        # 监听socket
-                        so = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
-                        so.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-                        so.bind((HOST, MYPORT))
-                        so.setsockopt(
-                            IPPROTO_IP,
-                            IP_ADD_MEMBERSHIP,
-                            inet_aton(MYGROUP) + inet_aton(HOST),
-                        )
-                        so.setblocking(FALSE)
-                        self.father.recv_socket = so
-
-                    except Exception as e:
-                        self.father.father.error_window("该地址不可使用")
-                    else:
-                        BroadListenThread = self.father.BroadListenThread(self.father)
-                        BroadListenThread.start()
-                        self.father.BroadListenThread = BroadListenThread
-                        mywindow.destroy()
-
-                """修改组播地址"""
-                mywindow = Tk()
-                mywindow.geometry("270x120")
-                mywindow.title("请修改组播设置")
-                Label(mywindow, text="组播地址: ").grid(row=0, column=0)
-                Label(mywindow, text="监听端口: ").grid(row=1, column=0)
-                Label(mywindow, text="本地端口: ").grid(row=2, column=0)
-                entry1 = Entry(mywindow)
-                entry1.grid(row=0, column=1)
-                entry1.insert(END, MYGROUP)
-                entry2 = Entry(mywindow)
-                entry2.grid(row=1, column=1)
-                entry2.insert(END, MYPORT)
-                entry3 = Entry(mywindow)
-                entry3.grid(row=2, column=1)
-                entry3.insert(END, SENDERPORT)
-                Button(
-                    mywindow,
-                    text="确定",
-                    command=lambda: set_address(entry1, entry2, entry3, self, mywindow),
-                ).grid(row=3, column=0, columnspan=2)
-
-                mywindow.mainloop()
-
-            def send_broad(self, msg, entry_input, username):
-                send_socket = self.father.send_socket
-                if not send_socket:
-                    self.change_address()
-                else:
-                    data = {"type": "broadChat", "msg": msg, "from": username}
-                    raw_data = json.dumps(data).encode()
-                    send_socket.sendto(raw_data, (MYGROUP, MYPORT))
-
-                    # 清空输入框
-                    entry_input.delete(0, END)
-
             def send_file(self, socket, label_target):
                 """点击发送文件按钮"""
                 target = label_target["text"]
@@ -323,7 +244,7 @@ class Client:
                         "size": size,
                         "ext": ext,
                     }
-                    t = "[-> All] " + "File Sent" + "\n"
+                    t = "[-> 群聊] " + "File Sent" + "\n"
                 else:
                     header = {
                         "type": "private_file",
@@ -334,12 +255,18 @@ class Client:
                     t = "[->" + target + "] " + "File Sent" + "\n"
                 raw_data = json.dumps(header).encode()
                 socket.send(raw_data)
-                import time
 
-                time.sleep(3)
+                self.recv_ack(socket)
+
                 socket.send(data)
                 text_box = self.father.text_box
                 text_box.insert(END, t)
+
+            @staticmethod
+            def recv_ack(socket):
+                raw_data = socket.recv(BUFFERSIZE).decode()
+                if json.loads(raw_data)["type"] == "ack":
+                    return
 
             def send(self, socket, label_target, entry_input):
                 """点击发送按钮"""
@@ -348,9 +275,6 @@ class Client:
                 username = self.father.father.username
                 if target == "群聊":
                     data = {"type": "group_msg", "msg": text, "from": username}
-                elif target == "组播":
-                    self.send_broad(text, entry_input, username)
-                    return
                 else:
                     # 私聊
                     data = {
@@ -453,29 +377,20 @@ class Client:
                 mywindow.mainloop()
 
                 father.socket.shutdown(2)
-                try:
-                    father.BroadListenThread.stop()
-                    father.send_socket.sendto("", (MYGROUP, MYPORT))  # fake send
-                except:
-                    pass
 
         def __main__(self):
             # 开启监听线程
-            listen_thread = self.ListenThread(self.socket, self)
-            listen_thread.start()
-            self.ListenThread = listen_thread
+            self._ListenThread = self.ListenThread(self.socket, self)
+            self._ListenThread.start()
 
             # 建立窗口
-            window = self.Window(self)
-            window.__main__()
-            self.window = window
+            self._window = self.Window(self)
+            self._window.__main__()
 
     def __main__(self):
-        # pass
         login = Client.Login(self)
         login.__main__()
 
 
 if __name__ == "__main__":
-    client = Client()
-    client.__main__()
+    Client().__main__()

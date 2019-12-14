@@ -9,8 +9,29 @@ import json
 
 HOST = ""
 PORT = 8945
-BUFFERSIZE = 1024 * 2
+BUFFERSIZE = 2048
 ADDR = (HOST, PORT)
+
+
+from Crypto.Cipher import AES
+from binascii import b2a_hex, a2b_hex
+
+
+class crypt:
+    def __init__(self, key):
+        pass
+
+    @staticmethod
+    def encrypt(username, text):
+        key = hash(username)
+        text += '\0' * 16 - (len(text) % 16)
+        return AES.new(key, AES.MODE_CBC, key).encrypt(text)
+     
+    @staticmethod
+    def decrypt(username, text):
+        key = hash(username)
+        plain_text = AES.new(key, AES.MODE_CBC, key).decrypt(a2b_hex(text))
+        return plain_text.rstrip('\0')
 
 
 class User:
@@ -75,11 +96,21 @@ class MsgHandler:
     def group_bin(data, user_list):
         MsgHandler.send_bin_to_users(user_list, data)
 
+    def recv_ack(self):
+        raw_data = self.user.client_socket.recv(BUFFERSIZE).decode()
+        if json.loads(raw_data)["type"] == "ack":
+            return
+
+    def send_ack(self):
+        self.user.client_socket.send(json.dumps({"type": "ack"}).encode())
+
     def private_file(self, data):
         target = data["to"]
         file_remain_size = data["size"]
 
         user = [k for k, v in MsgHandler.user_pool.items() if v == target]
+
+        self.send_ack()
 
         bin_data = b""
         while file_remain_size > 0:
@@ -101,16 +132,14 @@ class MsgHandler:
                 "ext": data["ext"],
             },
         )
-        import time
 
-        time.sleep(3)
-
+        self.recv_ack()
         self.send_bin_to_user(user, bin_data)
 
     def group_file(self, data):
 
         file_remain_size = data["size"]
-
+        self.send_ack()
         bin_data = b""
         while file_remain_size > 0:
             buffer = self.user.client_socket.recv(
@@ -132,6 +161,7 @@ class MsgHandler:
             },
         )
 
+        self.recv_ack()
         self.send_bin_to_users(MsgHandler.user_pool.keys(), bin_data)
 
     def login(self, data):
@@ -190,7 +220,6 @@ class ClientThread(threading.Thread):
             handler = MsgHandler(self.user)  # handler input
             while True:
                 raw_data = self.user.client_socket.recv(BUFFERSIZE).decode()
-                print(raw_data)
                 rec_data = json.loads(raw_data)
                 log("receive " + raw_data)
                 if rec_data["type"] == "logout":
