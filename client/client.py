@@ -15,23 +15,53 @@ BUFFERSIZE = 2048
 ADDR = (HOST, PORT)
 
 
-class Crypt:
+class Cryptor:
+    """Cryptor is based on AES-CBC-16"""
+
+    def __init__(self):
+        """
+        init func
+        :Note: should not be called
+        """
+        raise AttributeError("Cryptor should not be instance")
+
     @staticmethod
     def __key():
+        """
+        ! private
+        Generate a daily replacement key
+        Sha256 date of the day, take [16:32] as the key
+        """
         sha256 = hashlib.sha256()
         sha256.update(str(datetime.date.today()).encode("utf-8"))
         return sha256.hexdigest()[16:32].encode()
 
     @staticmethod
     def en(text):
-        key = Crypt.__key()
+        """
+        Encrypt: Encode the string into a byte-stream, then add it to a multiple of 16, then obtained a \
+        symmetric encryption key that is updated daily and then encrypt the string with the key.It is worth noting \
+        that '\0' is used in the completion.
+
+        :param text: str String to be encrypted
+        :return: byte Encrypted byte stream
+        """
+
+        key = Cryptor.__key()
         text += "\0" * (16 - (len(text.encode()) % 16))
         return AES.new(key, AES.MODE_CBC, key).encrypt(text.encode())
 
     @staticmethod
-    def de(text):
-        key = Crypt.__key()
-        plain_text = AES.new(key, AES.MODE_CBC, key).decrypt(text)
+    def de(byte):
+        """
+        Decrypt: Obtained the symmetric encrypted key, decrypt the byte stream and removed '\0',finally decoded\
+         it into a string
+
+        :param byte: byte Byte stream to be decrypted
+        :return: str Decrypted string
+        """
+        key = Cryptor.__key()
+        plain_text = AES.new(key, AES.MODE_CBC, key).decrypt(byte)
         return plain_text.decode().rstrip("\0")
 
 
@@ -81,7 +111,7 @@ class Client:
             """登录操作"""
             self.father.username = username
             data = {"type": "login", "username": username}
-            raw_data = Crypt.en(json.dumps(data))
+            raw_data = Cryptor.en(json.dumps(data))
             try:
                 self.father.connect()
             except Exception as e:
@@ -90,12 +120,12 @@ class Client:
             else:
                 socket = self.father.client_socket
                 socket.send(raw_data)
-                raw_data = Crypt.de(socket.recv(BUFFERSIZE))
+                raw_data = Cryptor.de(socket.recv(BUFFERSIZE))
                 recv_data = json.loads(raw_data)
                 if (
-                    recv_data["type"] == "login"
-                    and recv_data["username"] == username
-                    and recv_data["status"] == True
+                        recv_data["type"] == "login"
+                        and recv_data["username"] == username
+                        and recv_data["status"] == True
                 ):
                     # login success!
                     mainFrame = self.father.MainFrame(self.father)
@@ -197,7 +227,7 @@ class Client:
             def run(self):
                 while True:
                     try:
-                        raw_data = Crypt.de(self.socket.recv(BUFFERSIZE))
+                        raw_data = Cryptor.de(self.socket.recv(BUFFERSIZE))
                         data = json.loads(raw_data)
                     except:
                         break
@@ -212,8 +242,8 @@ class Client:
                     switcher[data["type"]](data)
 
             def send_ack(self):
-                self.socket.send(Crypt.en(json.dumps({"type": "ack"})))
-                print('send_ack'+"="*64)
+                self.socket.send(Cryptor.en(json.dumps({"type": "ack"})))
+                print('send_ack' + "=" * 64)
 
             def recv_file(self, data):
                 # print("[RECV_FILE]")
@@ -258,11 +288,11 @@ class Client:
                 """接收聊天信息并打印"""
                 text_box = self.father.text_box
                 text = (
-                    ("[群聊]" if data["type"] == "group_msg" else "")
-                    + data["from"]
-                    + ": "
-                    + data["msg"]
-                    + "\n"
+                        ("[群聊]" if data["type"] == "group_msg" else "")
+                        + data["from"]
+                        + ": "
+                        + data["msg"]
+                        + "\n"
                 )
                 text_box.insert(END, text)
 
@@ -277,7 +307,7 @@ class Client:
             def refresh(socket):
                 """点击刷新按钮"""
                 data = {"type": "list"}
-                raw_data = Crypt.en(json.dumps(data))
+                raw_data = Cryptor.en(json.dumps(data))
                 socket.send(raw_data)
 
             def send_file(self, socket, label_target):
@@ -304,7 +334,7 @@ class Client:
                         "to": target,
                     }
                     t = "[->" + target + "] " + "File Sent" + "\n"
-                raw_data = Crypt.en(json.dumps(header))
+                raw_data = Cryptor.en(json.dumps(header))
                 socket.send(raw_data)
 
                 self.recv_ack(socket)
@@ -315,9 +345,9 @@ class Client:
 
             @staticmethod
             def recv_ack(socket):
-                raw_data = Crypt.de(socket.recv(BUFFERSIZE))
+                raw_data = Cryptor.de(socket.recv(BUFFERSIZE))
                 if json.loads(raw_data)["type"] == "ack":
-                    print("="*32+"client recv_ack")
+                    print("=" * 32 + "client recv_ack")
                     return
 
             def send(self, socket, label_target, entry_input):
@@ -338,7 +368,7 @@ class Client:
                     text_box = self.father.text_box
                     t = "[->" + target + "]" + text + "\n"
                     text_box.insert(END, t)
-                raw_data = Crypt.en(json.dumps(data))
+                raw_data = Cryptor.en(json.dumps(data))
                 socket.send(raw_data)
                 entry_input.delete(0, END)
 
@@ -375,7 +405,7 @@ class Client:
                 f.pack()
 
                 # 聊天内容框
-                text_box = Text(f, bg="#FFFFFF", width=60, height=22, bd=0,)
+                text_box = Text(f, bg="#FFFFFF", width=60, height=22, bd=0, )
                 text_box.place(x=10, y=10, anchor=NW)
                 text_box.bind("<KeyPress>", lambda x: "break")
                 father.text_box = text_box
@@ -428,7 +458,7 @@ class Client:
                 button_send.place(x=400, y=371, anchor=CENTER)
 
                 # ! 退出按钮🔘
-                button_send = Button(f, text="退出", command=self.father.exit,)
+                button_send = Button(f, text="退出", command=self.father.exit, )
                 button_send.place(x=560, y=371, anchor=CENTER)
 
                 # ! button send file
