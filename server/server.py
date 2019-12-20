@@ -179,7 +179,8 @@ class Handler:
         :param user: user_instance
         """
         if user.address != self.user.address:
-            while True:
+            loop_start_time = datetime.datetime.now()
+            while (datetime.datetime.now() - loop_start_time).seconds < 3:
                 if user in Handler.ack_buffer:
                     Handler.ack_buffer.remove(user)
                     log("[recv_ack]", "SUCCESS")
@@ -198,7 +199,7 @@ class Handler:
         :param data: json private msg
         """
         Handler.send_json(
-            [k for k, v in Handler.user_pool.items() if v == data["to"]], data
+            [k for k, v in Handler.user_pool.items() if v in data["to"]], data
         )
 
     @staticmethod
@@ -218,7 +219,7 @@ class Handler:
         """
         bin_data = self.recv_file(size=data["size"])
         self.send_file(
-            users=[k for k, v in Handler.user_pool.items() if v == data["to"]],
+            users=[k for k, v in Handler.user_pool.items() if v in data["to"]],
             size=data["size"],
             ext=data["ext"],
             bin_data=bin_data,

@@ -146,7 +146,7 @@ class Client:
             # window.attributes("bg",red)
             screenwidth = window.winfo_screenwidth()
             screenheight = window.winfo_screenheight()
-            width = 580
+            width = 300
             height = 400
             alignstr = "%dx%d+%d+%d" % (
                 width,
@@ -161,12 +161,18 @@ class Client:
             # frame.pack(expand=YES, fill=BOTH)
 
             # Label
-            lable = Label(window, font="Arial, 20", text="请输入用户名", anchor="n").pack(
-                padx=10, pady=15, fill="x"
-            )
-
+            # lable = Label(window, font=("Wawati SC", 30), text="请输入用户名", anchor="n").pack(
+            #     padx=10, pady=15, fill="x"
+            # ).place(relx=0.15, rely=0.1)
+            
+            lable = Label(window, font=("Wawati SC", 30), text="请输入用户名", anchor="n")
+            lable.place(relx=0.19, rely=0.01)
+            # lable.pack(
+            #     padx=10, pady=15, fill="x"
+            # )
+            # lable
             # Username Entry
-            username_entry = Entry(window, font=17)
+            username_entry = Entry(window, font=17, justify='center')
             username_entry.place(relx=0.05, rely=0.15, relwidth=0.9, relheight=0.1)
             username_entry.bind(
                 "<Key-Return>", lambda x: self.login(username_entry.get(), window)
@@ -180,6 +186,21 @@ class Client:
                 command=lambda: self.login(username_entry.get(), window),
             )
             button.place(relx=0.2, rely=0.3, relheight=0.1, relwidth=0.2)
+
+            # ! Logo Coon
+            # Coonda = Label(window, font="Arial, 20", text="请输入用户名", anchor="n").pack(
+            #     padx=10, pady=15, fill="x"
+            # )
+            
+            img_gif = PhotoImage(file = './client/coonda1.gif')
+            label_img = Label(window, image = img_gif)
+            label_img.pack()
+            label_img.place(relx=0.16, rely=0.5)
+            label_img.borderwidth = 0
+
+            coonda_text = Label(window, text="COONDA", font=("Phosphate", 30))
+            # coonda_text.borderwidth = 0
+            coonda_text.place(relx=0.29, rely=0.45)
 
             # Exit Button
             button = Button(window, text="退出", font=50, command=window.destroy)
@@ -207,6 +228,9 @@ class Client:
             self.socket = father.client_socket  # may raise a Exception
             self.recv_socket = None
             self.send_socket = self.socket
+            self.username_list = None
+            self.ack_buffer = []
+            self.did_get_ack = False
 
         def exit(self):
             """点击退出按钮"""
@@ -229,6 +253,7 @@ class Client:
                     try:
                         raw_data = Cryptor.de(self.socket.recv(BUFFERSIZE))
                         data = json.loads(raw_data)
+                        # print(data)
                     except:
                         break
                     switcher = {
@@ -237,13 +262,16 @@ class Client:
                         "group_msg": self.chat,
                         "ping": self.ping,
                         "file": self.recv_file,
-                        "ack": lambda x: print('shit'),
+                        "ack": self.recv_ack,
                     }
                     switcher[data["type"]](data)
 
+            def recv_ack(self, _):
+                self.father.did_get_ack = True
+
             def send_ack(self):
                 self.socket.send(Cryptor.en(json.dumps({"type": "ack"})))
-                print('send_ack' + "=" * 64)
+                # print('send_ack' + "=" * 64)
 
             def recv_file(self, data):
                 # print("[RECV_FILE]")
@@ -280,6 +308,7 @@ class Client:
                 listbox = self.father.listbox
                 username_list = ["群聊"]
                 username_list += data["list"]
+                self.father.username_list = username_list
                 listbox.delete(0, END)  # 清空现有列表
                 for l in username_list:
                     listbox.insert(END, l)  # 插入新列表
@@ -287,6 +316,7 @@ class Client:
             def chat(self, data):
                 """接收聊天信息并打印"""
                 text_box = self.father.text_box
+                # print(data)
                 text = (
                         ("[群聊]" if data["type"] == "group_msg" else "")
                         + data["from"]
@@ -310,16 +340,19 @@ class Client:
                 raw_data = Cryptor.en(json.dumps(data))
                 socket.send(raw_data)
 
-            def send_file(self, socket, label_target):
+            def send_file(self, socket, listbox):
                 """点击发送文件按钮"""
-                target = label_target["text"]
+                all_items = listbox.get(0, END) # tuple with text of all items in Listbox
+                sel_idx = listbox.curselection() # tuple with indexes of selected items
+                target = [all_items[item] for item in sel_idx]
+                # print(target)
                 filename = askopenfilename()
                 # print(filename)
                 ext = filename.split(".")[-1]
                 with open(filename, "rb") as f:
                     data = f.read()
                 size = len(data)
-                if target == "群聊":
+                if "群聊" in target:
                     header = {
                         "type": "group_file",
                         "size": size,
@@ -333,29 +366,34 @@ class Client:
                         "ext": ext,
                         "to": target,
                     }
-                    t = "[->" + target + "] " + "File Sent" + "\n"
+                    t = "[->" + ",".join(target) + "] " + "File Sent" + "\n"
                 raw_data = Cryptor.en(json.dumps(header))
                 socket.send(raw_data)
 
-                self.recv_ack(socket)
+                self.recv_ack()
 
                 socket.send(data)
                 text_box = self.father.text_box
                 text_box.insert(END, t)
 
-            @staticmethod
-            def recv_ack(socket):
-                raw_data = Cryptor.de(socket.recv(BUFFERSIZE))
-                if json.loads(raw_data)["type"] == "ack":
-                    print("=" * 32 + "client recv_ack")
-                    return
+            # @staticmethod
+            def recv_ack(self):
+                loop_start_time = datetime.datetime.now()
+                while (datetime.datetime.now() - loop_start_time).seconds < 3:
+                    if self.father.did_get_ack:
+                        self.father.did_get_ack = False
+                        break
 
-            def send(self, socket, label_target, entry_input):
+            def send(self, socket, listbox, entry_input):
                 """点击发送按钮"""
+                # print(listbox.curselection())
                 text = entry_input.get()
-                target = label_target["text"]
+                all_items = listbox.get(0, END) # tuple with text of all items in Listbox
+                sel_idx = listbox.curselection() # tuple with indexes of selected items
+                target = [all_items[item] for item in sel_idx]
+                # print(target)
                 username = self.father.father.username
-                if target == "群聊":
+                if "群聊" in target:
                     data = {"type": "group_msg", "msg": text, "from": username}
                 else:
                     # 私聊
@@ -366,14 +404,14 @@ class Client:
                         "from": username,
                     }
                     text_box = self.father.text_box
-                    t = "[->" + target + "]" + text + "\n"
+                    t = "[->" + ",".join(target) + "]" + text + "\n"
                     text_box.insert(END, t)
                 raw_data = Cryptor.en(json.dumps(data))
                 socket.send(raw_data)
                 entry_input.delete(0, END)
 
             @staticmethod
-            def change_target(listbox, label_target):
+            def didSelectOneItem(listbox, label_target):
                 """双击选择列表"""
                 try:
                     label_target["text"] = listbox.get(listbox.curselection())
@@ -385,9 +423,10 @@ class Client:
 
             def __main__(self):
                 father = self.father
-                window = Tk()
-                screenwidth = window.winfo_screenwidth()
-                screenheight = window.winfo_screenheight()
+                grandfather = self.father.father
+                self.window = Tk()
+                screenwidth = self.window.winfo_screenwidth()
+                screenheight = self.window.winfo_screenheight()
                 width = 600
                 height = 400
                 alignstr = "%dx%d+%d+%d" % (
@@ -396,27 +435,32 @@ class Client:
                     (screenwidth - width) / 2,
                     (screenheight - height) / 2,
                 )
-                window.geometry(alignstr)
-                window.title("聊天室")
-                window.resizable(width=False, height=False)
+                self.window.geometry(alignstr)
+                self.window.title("iCoonda Chat Room [Your name: {}]".format(grandfather.username))
+                self.window.resizable(width=False, height=False)
                 # 背景
-                f = Frame(window, bg="#EEEEEE", width=600, height=400)
+                f = Frame(self.window, bg="#EEEEEE", width=600, height=400)
                 # f.place(x=0, y=0)
                 f.pack()
 
-                # 聊天内容框
-                text_box = Text(f, bg="#FFFFFF", width=60, height=22, bd=0, )
-                text_box.place(x=10, y=10, anchor=NW)
+                
+                # ! 聊天内容框
+                
+                text_box = Text(f, bg="#FFFFFF", width=60, height=22, bd=0)
+                text_box.place(x=150, y=10, anchor=NW)
                 text_box.bind("<KeyPress>", lambda x: "break")
                 father.text_box = text_box
                 text_box.focus_set()
+                
+                
 
-                # 右侧选择聊天对象
-                Label(f, text="双击选择发送对象:", bg="#EEEEEE").place(x=460, y=10, anchor=NW)
-                listbox = Listbox(f, width=13, height=13, bg="#FFFFFF")
-                listbox.place(x=460, y=35, anchor=NW)
+                # ! 右侧选择聊天对象
+                # Label(f, text="双击选择发送对象:", bg="#EEEEEE").place(x=460, y=10, anchor=NW)
+                listbox = Listbox(f, width=13, height=23, bg="#FFFFFF", borderwidth=0, highlightthickness=0, selectmode=EXTENDED)
+                listbox.place(x=5, y=5, anchor=NW)
+                # listbox.
                 father.listbox = listbox
-
+                jjj = -80
                 # 刷新列表
                 button_refresh = Button(
                     f,
@@ -425,21 +469,21 @@ class Client:
                     relief=FLAT,
                     command=lambda: self.refresh(father.socket),
                 )
-                button_refresh.place(x=515, y=290, anchor=CENTER)
+                button_refresh.place(x=300-jjj, y=372, anchor=CENTER)
 
                 # 下方内容输入框
-                label_target = Label(f, text="群聊", bg="#FFFFFF", width=8)
-                label_target.place(x=12, y=360)
+                # label_target = Label(f, text="群聊", bg="#FFFFFF", width=8, height=1)
+                # label_target.place(x=150, y=320)
                 listbox.bind(
                     "<Double-Button-1>",
-                    lambda x: self.change_target(listbox, label_target),
+                    lambda x: self.didSelectOneItem(listbox, label_target),
                 )
-                self.label_target = label_target
+                # self.label_target = label_target     
                 entry_input = Entry(f, width=30)
-                entry_input.place(x=90, y=358)
+                entry_input.place(x=230, y=318)
                 entry_input.bind(
                     "<Key-Return>",
-                    lambda x: self.send(father.socket, label_target, entry_input),
+                    lambda x: self.send(father.socket, listbox, entry_input),
                 )
                 self.et_input = entry_input
 
@@ -453,9 +497,9 @@ class Client:
                 button_send = Button(
                     f,
                     text="发送",
-                    command=lambda: self.send(father.socket, label_target, entry_input),
+                    command=lambda: self.send(father.socket, listbox, entry_input),
                 )
-                button_send.place(x=400, y=371, anchor=CENTER)
+                button_send.place(x=540, y=333, anchor=CENTER)
 
                 # ! 退出按钮🔘
                 button_send = Button(f, text="退出", command=self.father.exit, )
@@ -466,14 +510,22 @@ class Client:
                 button_send_file = Button(
                     f,
                     text="发送文件",
-                    command=lambda: self.send_file(father.socket, label_target),
+                    command=lambda: self.send_file(father.socket, listbox),
                 )
-                button_send_file.place(x=515, y=330, anchor=CENTER)
+                button_send_file.place(x=190-jjj, y=372, anchor=CENTER)
+
+                # ! Coonda
+                coon_bg = PhotoImage(file = './client/coonda_100x100.gif')
+                img_bg = Label(self.window, image=coon_bg, bg=None)
+                img_bg.pack()
+
+                img_bg.place(x=0, y=300)
+                img_bg.borderwidth = 0
 
                 # 刷新列表
                 self.refresh(father.socket)
 
-                window.mainloop()
+                self.window.mainloop()
 
     def __main__(self):
         login = Client.Login(self)
