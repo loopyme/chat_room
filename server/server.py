@@ -1,8 +1,9 @@
 from socket import *
 import threading
 import json
-from Crypto.Cipher import AES
-import hashlib, datetime
+import time
+import os
+from urllib.parse import quote, unquote
 
 HOST = ""
 PORT = 8945
@@ -11,25 +12,6 @@ ADDR = (HOST, PORT)
 
 
 class Cryptor:
-    """Cryptor is based on AES-CBC-16"""
-
-    def __init__(self):
-        """
-        init func
-        :Note: should not be called
-        """
-        raise AttributeError("Cryptor should not be instance")
-
-    @staticmethod
-    def __key():
-        """
-        ! private
-        Generate a daily replacement key
-        Sha256 date of the day, take [16:32] as the key
-        """
-        sha256 = hashlib.sha256()
-        sha256.update(str(datetime.date.today()).encode("utf-8"))
-        return sha256.hexdigest()[16:32].encode()
 
     @staticmethod
     def en(text):
@@ -41,11 +23,8 @@ class Cryptor:
         :param text: str String to be encrypted
         :return: byte Encrypted byte stream
         """
-
-        key = Cryptor.__key()
-        text += "\0" * (16 - (len(text.encode()) % 16))
-        return AES.new(key, AES.MODE_CBC, key).encrypt(text.encode())
-
+        temp = quote(text)
+        return bytes(temp,encoding = "utf-8")
     @staticmethod
     def de(byte):
         """
@@ -55,9 +34,8 @@ class Cryptor:
         :param byte: byte Byte stream to be decrypted
         :return: str Decrypted string
         """
-        key = Cryptor.__key()
-        plain_text = AES.new(key, AES.MODE_CBC, key).decrypt(byte)
-        return plain_text.decode().rstrip("\0")
+        temp = str(byte,encoding = "utf-8")
+        return unquote(temp)
 
 
 class User:
@@ -67,7 +45,6 @@ class User:
         self.address = address
         self.client_socket = client_socket
 
-
 class Handler:
     """
     Handle the msg or files
@@ -75,9 +52,16 @@ class Handler:
 
     user_pool = {}  # user: username
     ack_buffer = []
+    user_data = {}
 
     def __init__(self, user):
+        size = os.path.getsize('userdata.txt')
         self.user = user
+        if size != 0:
+            file = open('userdata.txt', 'r')
+            js = file.read()
+            Handler.user_data = json.loads(js)
+            file.close()
 
     @classmethod
     def remove_user(cls, user):
@@ -245,16 +229,49 @@ class Handler:
 
         :param data: json login package
         """
-        if self.user in Handler.user_pool.keys():  # already login
+        if data["username"] in Handler.user_pool.values():  # already login
             data["status"] = False
             data["info"] = "您已经登录了"
-        elif data["username"] in Handler.user_pool.values():  # username in use
+        elif data["username"] not in Handler.user_data.keys():
             data["status"] = False
-            data["info"] = "该用户名已被占用"
-        else:  # login success
+            data["info"] = "您还未注册"
+        elif data["password"] == Handler.user_data[data["username"]]:# login success
             data["status"] = True
+            data["info"] = "登录成功"
             Handler.user_pool[self.user] = data["username"]
+        elif data["password"] != Handler.user_data[data["username"]]:  # username in use
+            data["status"] = False
+            data["info"] = "密码错误"
         self.send_json_back(data)
+        time.sleep(0.1)
+        if(data["info"] == "登录成功"):
+            data2 = {}
+            data2["type"] = "list"
+            data2["list"] = list(Handler.user_pool.values())
+            Handler.send_json(Handler.user_pool.keys(),data2)
+
+
+    def signin(self, data):
+        """
+        deal with the signin package
+
+        :param data: json signin package
+        """
+        if(data["username"] in Handler.user_data.keys()):
+            data["status"] = False
+            data["info"] = "用户名已存在"
+            data["type"] = "register"
+        else:
+            data["status"] = True
+            data["info"] = "注册成功"
+            data["type"] = "register"
+            Handler.user_data[data["username"]] = data["password"]
+            js = json.dumps(Handler.user_data)
+            file = open('userdata.txt', 'w')
+            file.write(js)
+            file.close()
+        self.send_json_back(data)
+
 
     def logout(self, _):
         """
@@ -297,6 +314,7 @@ class Handler:
             "private_file": self.private_file,
             "group_file": self.group_file,
             "ack": lambda x: Handler.ack_buffer.append(self.user),
+            "register": self.signin,
         }
         try:
             return switcher[data["type"]](data)
