@@ -7,13 +7,15 @@ import struct
 import uuid
 from Crypto.Cipher import AES
 import hashlib, datetime
+from PIL import Image
 
 SENDERPORT = 1501
-HOST = "127.0.0.1"  # 'chat.loopy.tech'
+# HOST = "127.0.0.1"  # 'chat.loopy.tech'
+HOST = "loopy.tech"
 PORT = 8945
 BUFFERSIZE = 2048
 ADDR = (HOST, PORT)
-
+PIC_EXT = ["jpg", "png", "gif"]
 
 class Cryptor:
     """Cryptor is based on AES-CBC-16"""
@@ -298,10 +300,13 @@ class Client:
 
                 with open(file_name, "wb") as f:
                     f.write(bin_data)
-
+                # ! NEW
                 text_box = self.father.text_box
                 t = "[" + file_sender + "]发给你了一个文件：" + file_name[2:] + "\n"
                 text_box.insert(END, t)
+                print(file_ext)
+                if file_ext in PIC_EXT:
+                    Image.open(file_name).show()
 
             def list(self, data):
                 """刷新列表"""
