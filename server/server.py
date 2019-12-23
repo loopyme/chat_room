@@ -1,8 +1,11 @@
 from socket import *
 import threading
 import json
-from Crypto.Cipher import AES
-import hashlib, datetime
+import hashlib, datetime, base64
+
+from Crypto.Cipher import AES, PKCS1_v1_5
+from Crypto import Random
+from Crypto.PublicKey import RSA
 
 HOST = ""
 PORT = 8945
@@ -11,7 +14,7 @@ ADDR = (HOST, PORT)
 
 
 class Cryptor:
-    """Cryptor is based on AES-CBC-16"""
+    """Cryptor is based on AES-CBC-16 and RSA_PKCS"""
 
     def __init__(self):
         """
@@ -20,44 +23,88 @@ class Cryptor:
         """
         raise AttributeError("Cryptor should not be instance")
 
-    @staticmethod
-    def __key():
-        """
-        ! private
-        Generate a daily replacement key
-        Sha256 date of the day, take [16:32] as the key
-        """
-        sha256 = hashlib.sha256()
-        sha256.update(str(datetime.date.today()).encode("utf-8"))
-        return sha256.hexdigest()[16:32].encode()
+    @classmethod
+    def set_AES_key(cls, AES_key):
+        cls.__AES_key = AES_key
 
     @staticmethod
-    def en(text):
+    def generate_RSA_key():
+        """
+        generate a RSA key pair
+
+        :return public_pem: byte
+        :return private_pem: byte
+        """
+        rsa = RSA.generate(1024, Random.new().read)
+        private_pem = rsa.exportKey()
+        public_pem = rsa.publickey().exportKey()
+        return public_pem, private_pem
+
+    @staticmethod
+    def generate_AES_key():
+        """
+        Generate a AES key
+
+        :return key: byte
+        """
+        return Random.get_random_bytes(16)
+
+    @classmethod
+    def AES_encrypt(cls, text, key=None):
         """
         Encrypt: Encode the string into a byte-stream, then add it to a multiple of 16, then obtained a \
         symmetric encryption key that is updated daily and then encrypt the string with the key.It is worth noting \
         that '\0' is used in the completion.
 
         :param text: str String to be encrypted
+        :param key: byte AES key
         :return: byte Encrypted byte stream
         """
-
-        key = Cryptor.__key()
+        key = cls.__AES_key if key is None else key
         text += "\0" * (16 - (len(text.encode()) % 16))
         return AES.new(key, AES.MODE_CBC, key).encrypt(text.encode())
 
-    @staticmethod
-    def de(byte):
+    @classmethod
+    def AES_decrypt(cls, byte, key=None):
         """
         Decrypt: Obtained the symmetric encrypted key, decrypt the byte stream and removed '\0',finally decoded\
          it into a string
 
         :param byte: byte Byte stream to be decrypted
+        :param key: byte AES key
         :return: str Decrypted string
         """
-        key = Cryptor.__key()
+        key = cls.__AES_key if key is None else key
         plain_text = AES.new(key, AES.MODE_CBC, key).decrypt(byte)
         return plain_text.decode().rstrip("\0")
+
+    @staticmethod
+    def RSA_encrypt(byte, public_key):
+        """
+        Encrypt: import a RSA public key and use it to encrypt a byte stream
+
+        :param byte: byte Byte stream to be encrypted
+        :param public_key: byte RSA public_key
+        :return: byte Encrypted byte stream
+        """
+        rsa_key = RSA.importKey(public_key)
+        cipher = PKCS1_v1_5.new(rsa_key)
+        cipher_byte = base64.b64encode(cipher.encrypt(byte))
+        return cipher_byte
+
+    @staticmethod
+    def RSA_decrypt(byte, private_key):
+        """
+        Decrypt: import a RSA public key and use it to decrypt a byte stream
+
+        :param byte: byte Byte stream to be decrypted
+        :param private_key: byte RSA private_key
+        :return: byte Decrypted byte
+        """
+        rsa_key = RSA.importKey(private_key)
+        cipher = PKCS1_v1_5.new(rsa_key)
+        text = cipher.decrypt(base64.b64decode(byte), "ERROR")
+        return text
 
 
 class User:
@@ -66,6 +113,7 @@ class User:
     def __init__(self, address, client_socket):
         self.address = address
         self.client_socket = client_socket
+        self.AES_key = Cryptor.generate_AES_key()
 
 
 class Handler:
@@ -103,7 +151,7 @@ class Handler:
         """
         raw_data = json.dumps(data)
         for user in users:
-            user.client_socket.send(Cryptor.en(raw_data))
+            user.client_socket.send(Cryptor.AES_encrypt(raw_data, user.AES_key))
         log("[send_json] " + raw_data, "SUCCESS")
 
     def send_json_back(self, data):
@@ -113,7 +161,7 @@ class Handler:
         :param data: json data to be sent
         """
         raw_data = json.dumps(data)
-        self.user.client_socket.send(Cryptor.en(raw_data))
+        self.user.client_socket.send(Cryptor.AES_encrypt(raw_data, self.user.AES_key))
         log("[send_to_user] " + raw_data, "SUCCESS")
 
     def send_file(self, users, size, ext, bin_data):
@@ -167,7 +215,9 @@ class Handler:
         """
         send ack to allow client send file
         """
-        self.user.client_socket.send(Cryptor.en(json.dumps({"type": "ack"})))
+        self.user.client_socket.send(
+            Cryptor.AES_encrypt(json.dumps({"type": "ack"}), self.user.AES_key)
+        )
         log("[send_ack]", "SUCCESS")
 
     def recv_ack(self, user):
@@ -186,7 +236,9 @@ class Handler:
                     log("[recv_ack]", "SUCCESS")
                     return
         else:
-            raw_data = Cryptor.de(user.client_socket.recv(BUFFERSIZE))
+            raw_data = Cryptor.AES_decrypt(
+                user.client_socket.recv(BUFFERSIZE), user.AES_key
+            )
             if json.loads(raw_data)["type"] == "ack":
                 log("[recv_ack]", "SUCCESS")
                 return
@@ -314,6 +366,20 @@ class ClientThread(threading.Thread):
         threading.Thread.__init__(self)
         self.user = User(addr, client_socket)
 
+    def key_exchange(self):
+        """
+        exchange AES key with client: The client generates an RSA key pair and sends the public key to the server, \
+         which generates an AES key for this socket. The server uses the RSA public key of the client to encrypt the\
+         AES key as a ciphertext and sends it back to the client, who decrypts the ciphertext and obtains the AES key\
+         of the socket
+        
+        """
+        client_pub_key = self.user.client_socket.recv(BUFFERSIZE)
+        self.user.client_socket.send(
+            Cryptor.RSA_encrypt(self.user.AES_key, client_pub_key)
+        )
+        log("Send AES key to {}".format(self.user.address), "SUCCESS")
+
     def run(self):
         """
         main process of ClientThread
@@ -323,8 +389,11 @@ class ClientThread(threading.Thread):
         """
         try:
             handler = Handler(self.user)  # handler input
+            self.key_exchange()
             while True:
-                raw_data = Cryptor.de(self.user.client_socket.recv(BUFFERSIZE))
+                raw_data = Cryptor.AES_decrypt(
+                    self.user.client_socket.recv(BUFFERSIZE), self.user.AES_key
+                )
                 rec_data = json.loads(raw_data)
                 log("receive " + raw_data)
                 if rec_data["type"] == "logout":

@@ -5,8 +5,11 @@ from tkinter.filedialog import askopenfilename
 import threading
 import struct
 import uuid
-from Crypto.Cipher import AES
-import hashlib, datetime
+import hashlib, datetime, base64
+
+from Crypto.Cipher import AES, PKCS1_v1_5
+from Crypto import Random
+from Crypto.PublicKey import RSA
 
 SENDERPORT = 1501
 HOST = "127.0.0.1"  # 'chat.loopy.tech'
@@ -16,53 +19,96 @@ ADDR = (HOST, PORT)
 
 
 class Cryptor:
-    """Cryptor is based on AES-CBC-16"""
+    """Cryptor is based on AES-CBC-16 and RSA_PKCS"""
 
     def __init__(self):
         """
         init func
         :Note: should not be called
         """
-        raise AttributeError("Cryptor should not be instance")
+        raise AttributeError("Cryptor should not be instantiated")
+
+    @classmethod
+    def set_AES_key(cls, AES_key):
+        cls.__AES_key = AES_key
 
     @staticmethod
-    def __key():
+    def generate_RSA_key():
         """
-        ! private
-        Generate a daily replacement key
-        Sha256 date of the day, take [16:32] as the key
+        generate a RSA key pair
+
+        :return: tuple_of_byte (public_pem,private_pem)
         """
-        sha256 = hashlib.sha256()
-        sha256.update(str(datetime.date.today()).encode("utf-8"))
-        return sha256.hexdigest()[16:32].encode()
+        rsa = RSA.generate(1024, Random.new().read)
+        private_pem = rsa.exportKey()
+        public_pem = rsa.publickey().exportKey()
+        return public_pem, private_pem
 
     @staticmethod
-    def en(text):
+    def generate_AES_key():
+        """
+        Generate a AES key
+
+        :return: byte AES key
+        """
+        return Random.get_random_bytes(16)
+
+    @classmethod
+    def AES_encrypt(cls, text, key=None):
         """
         Encrypt: Encode the string into a byte-stream, then add it to a multiple of 16, then obtained a \
         symmetric encryption key that is updated daily and then encrypt the string with the key.It is worth noting \
         that '\0' is used in the completion.
 
         :param text: str String to be encrypted
+        :param key: byte AES key
         :return: byte Encrypted byte stream
         """
-
-        key = Cryptor.__key()
+        key = cls.__AES_key if key is None else key
         text += "\0" * (16 - (len(text.encode()) % 16))
         return AES.new(key, AES.MODE_CBC, key).encrypt(text.encode())
 
-    @staticmethod
-    def de(byte):
+    @classmethod
+    def AES_decrypt(cls, byte, key=None):
         """
         Decrypt: Obtained the symmetric encrypted key, decrypt the byte stream and removed '\0',finally decoded\
          it into a string
 
         :param byte: byte Byte stream to be decrypted
+        :param key: byte AES key
         :return: str Decrypted string
         """
-        key = Cryptor.__key()
+        key = cls.__AES_key if key is None else key
         plain_text = AES.new(key, AES.MODE_CBC, key).decrypt(byte)
         return plain_text.decode().rstrip("\0")
+
+    @staticmethod
+    def RSA_encrypt(byte, public_key):
+        """
+        Encrypt: import a RSA public key and use it to encrypt a byte stream
+
+        :param byte: byte Byte stream to be encrypted
+        :param public_key: byte RSA public_key
+        :return: byte Encrypted byte stream
+        """
+        rsa_key = RSA.importKey(public_key)
+        cipher = PKCS1_v1_5.new(rsa_key)
+        cipher_byte = base64.b64encode(cipher.encrypt(byte))
+        return cipher_byte
+
+    @staticmethod
+    def RSA_decrypt(byte, private_key):
+        """
+        Decrypt: import a RSA public key and use it to decrypt a byte stream
+
+        :param byte: byte Byte stream to be decrypted
+        :param private_key: byte RSA private_key
+        :return: byte Decrypted byte
+        """
+        rsa_key = RSA.importKey(private_key)
+        cipher = PKCS1_v1_5.new(rsa_key)
+        text = cipher.decrypt(base64.b64decode(byte), "ERROR")
+        return text
 
 
 class Client:
@@ -74,7 +120,21 @@ class Client:
         if not self.connected:
             self.client_socket = socket(AF_INET, SOCK_STREAM)
             self.client_socket.connect(ADDR)
+            self.key_exchange()
             self.connected = True
+
+    def key_exchange(self):
+        """
+        exchange AES key with client: The client generates an RSA key pair and sends the public key to the server, \
+         which generates an AES key for this socket. The server uses the RSA public key of the client to encrypt the\
+         AES key as a ciphertext and sends it back to the client, who decrypts the ciphertext and obtains the AES key\
+         of the socket
+        
+        """
+        pub_key, pri_key = Cryptor.generate_RSA_key()
+        self.client_socket.send(pub_key)
+        cipher_RSA_key = self.client_socket.recv(BUFFERSIZE)
+        Cryptor.set_AES_key(Cryptor.RSA_decrypt(cipher_RSA_key, pri_key))
 
     def disconnect(self):
         """断开服务器"""
@@ -111,21 +171,22 @@ class Client:
             """登录操作"""
             self.father.username = username
             data = {"type": "login", "username": username}
-            raw_data = Cryptor.en(json.dumps(data))
             try:
                 self.father.connect()
             except Exception as e:
+                print(e)
                 self.father.error_window("网络连接异常，无法连接到服务器")
                 return False
             else:
+                raw_data = Cryptor.AES_encrypt(json.dumps(data))
                 socket = self.father.client_socket
                 socket.send(raw_data)
-                raw_data = Cryptor.de(socket.recv(BUFFERSIZE))
+                raw_data = Cryptor.AES_decrypt(socket.recv(BUFFERSIZE))
                 recv_data = json.loads(raw_data)
                 if (
-                        recv_data["type"] == "login"
-                        and recv_data["username"] == username
-                        and recv_data["status"] == True
+                    recv_data["type"] == "login"
+                    and recv_data["username"] == username
+                    and recv_data["status"] == True
                 ):
                     # login success!
                     mainFrame = self.father.MainFrame(self.father)
@@ -164,7 +225,7 @@ class Client:
             # lable = Label(window, font=("Wawati SC", 30), text="请输入用户名", anchor="n").pack(
             #     padx=10, pady=15, fill="x"
             # ).place(relx=0.15, rely=0.1)
-            
+
             lable = Label(window, font=("Wawati SC", 30), text="请输入用户名", anchor="n")
             lable.place(relx=0.19, rely=0.01)
             # lable.pack(
@@ -172,7 +233,7 @@ class Client:
             # )
             # lable
             # Username Entry
-            username_entry = Entry(window, font=17, justify='center')
+            username_entry = Entry(window, font=17, justify="center")
             username_entry.place(relx=0.05, rely=0.15, relwidth=0.9, relheight=0.1)
             username_entry.bind(
                 "<Key-Return>", lambda x: self.login(username_entry.get(), window)
@@ -191,9 +252,9 @@ class Client:
             # Coonda = Label(window, font="Arial, 20", text="请输入用户名", anchor="n").pack(
             #     padx=10, pady=15, fill="x"
             # )
-            
-            img_gif = PhotoImage(file = './client/coonda1.gif')
-            label_img = Label(window, image = img_gif)
+
+            img_gif = PhotoImage(file="./client/coonda1.gif")
+            label_img = Label(window, image=img_gif)
             label_img.pack()
             label_img.place(relx=0.16, rely=0.5)
             label_img.borderwidth = 0
@@ -251,7 +312,7 @@ class Client:
             def run(self):
                 while True:
                     try:
-                        raw_data = Cryptor.de(self.socket.recv(BUFFERSIZE))
+                        raw_data = Cryptor.AES_decrypt(self.socket.recv(BUFFERSIZE))
                         data = json.loads(raw_data)
                         # print(data)
                     except:
@@ -270,7 +331,7 @@ class Client:
                 self.father.did_get_ack = True
 
             def send_ack(self):
-                self.socket.send(Cryptor.en(json.dumps({"type": "ack"})))
+                self.socket.send(Cryptor.AES_encrypt(json.dumps({"type": "ack"})))
                 # print('send_ack' + "=" * 64)
 
             def recv_file(self, data):
@@ -318,11 +379,11 @@ class Client:
                 text_box = self.father.text_box
                 # print(data)
                 text = (
-                        ("[群聊]" if data["type"] == "group_msg" else "")
-                        + data["from"]
-                        + ": "
-                        + data["msg"]
-                        + "\n"
+                    ("[群聊]" if data["type"] == "group_msg" else "")
+                    + data["from"]
+                    + ": "
+                    + data["msg"]
+                    + "\n"
                 )
                 text_box.insert(END, text)
 
@@ -337,13 +398,15 @@ class Client:
             def refresh(socket):
                 """点击刷新按钮"""
                 data = {"type": "list"}
-                raw_data = Cryptor.en(json.dumps(data))
+                raw_data = Cryptor.AES_encrypt(json.dumps(data))
                 socket.send(raw_data)
 
             def send_file(self, socket, listbox):
                 """点击发送文件按钮"""
-                all_items = listbox.get(0, END) # tuple with text of all items in Listbox
-                sel_idx = listbox.curselection() # tuple with indexes of selected items
+                all_items = listbox.get(
+                    0, END
+                )  # tuple with text of all items in Listbox
+                sel_idx = listbox.curselection()  # tuple with indexes of selected items
                 target = [all_items[item] for item in sel_idx]
                 # print(target)
                 filename = askopenfilename()
@@ -367,7 +430,7 @@ class Client:
                         "to": target,
                     }
                     t = "[->" + ",".join(target) + "] " + "File Sent" + "\n"
-                raw_data = Cryptor.en(json.dumps(header))
+                raw_data = Cryptor.AES_encrypt(json.dumps(header))
                 socket.send(raw_data)
 
                 self.recv_ack()
@@ -388,8 +451,10 @@ class Client:
                 """点击发送按钮"""
                 # print(listbox.curselection())
                 text = entry_input.get()
-                all_items = listbox.get(0, END) # tuple with text of all items in Listbox
-                sel_idx = listbox.curselection() # tuple with indexes of selected items
+                all_items = listbox.get(
+                    0, END
+                )  # tuple with text of all items in Listbox
+                sel_idx = listbox.curselection()  # tuple with indexes of selected items
                 target = [all_items[item] for item in sel_idx]
                 # print(target)
                 username = self.father.father.username
@@ -406,7 +471,7 @@ class Client:
                     text_box = self.father.text_box
                     t = "[->" + ",".join(target) + "]" + text + "\n"
                     text_box.insert(END, t)
-                raw_data = Cryptor.en(json.dumps(data))
+                raw_data = Cryptor.AES_encrypt(json.dumps(data))
                 socket.send(raw_data)
                 entry_input.delete(0, END)
 
@@ -436,27 +501,34 @@ class Client:
                     (screenheight - height) / 2,
                 )
                 self.window.geometry(alignstr)
-                self.window.title("iCoonda Chat Room [Your name: {}]".format(grandfather.username))
+                self.window.title(
+                    "iCoonda Chat Room [Your name: {}]".format(grandfather.username)
+                )
                 self.window.resizable(width=False, height=False)
                 # 背景
                 f = Frame(self.window, bg="#EEEEEE", width=600, height=400)
                 # f.place(x=0, y=0)
                 f.pack()
 
-                
                 # ! 聊天内容框
-                
+
                 text_box = Text(f, bg="#FFFFFF", width=60, height=22, bd=0)
                 text_box.place(x=150, y=10, anchor=NW)
                 text_box.bind("<KeyPress>", lambda x: "break")
                 father.text_box = text_box
                 text_box.focus_set()
-                
-                
 
                 # ! 右侧选择聊天对象
                 # Label(f, text="双击选择发送对象:", bg="#EEEEEE").place(x=460, y=10, anchor=NW)
-                listbox = Listbox(f, width=13, height=23, bg="#FFFFFF", borderwidth=0, highlightthickness=0, selectmode=EXTENDED)
+                listbox = Listbox(
+                    f,
+                    width=13,
+                    height=23,
+                    bg="#FFFFFF",
+                    borderwidth=0,
+                    highlightthickness=0,
+                    selectmode=EXTENDED,
+                )
                 listbox.place(x=5, y=5, anchor=NW)
                 # listbox.
                 father.listbox = listbox
@@ -469,16 +541,17 @@ class Client:
                     relief=FLAT,
                     command=lambda: self.refresh(father.socket),
                 )
-                button_refresh.place(x=300-jjj, y=372, anchor=CENTER)
+                button_refresh.place(x=300 - jjj, y=372, anchor=CENTER)
 
                 # 下方内容输入框
                 # label_target = Label(f, text="群聊", bg="#FFFFFF", width=8, height=1)
                 # label_target.place(x=150, y=320)
+                label_target = None
                 listbox.bind(
                     "<Double-Button-1>",
                     lambda x: self.didSelectOneItem(listbox, label_target),
                 )
-                # self.label_target = label_target     
+                # self.label_target = label_target
                 entry_input = Entry(f, width=30)
                 entry_input.place(x=230, y=318)
                 entry_input.bind(
@@ -502,7 +575,7 @@ class Client:
                 button_send.place(x=540, y=333, anchor=CENTER)
 
                 # ! 退出按钮🔘
-                button_send = Button(f, text="退出", command=self.father.exit, )
+                button_send = Button(f, text="退出", command=self.father.exit,)
                 button_send.place(x=560, y=371, anchor=CENTER)
 
                 # ! button send file
@@ -512,10 +585,10 @@ class Client:
                     text="发送文件",
                     command=lambda: self.send_file(father.socket, listbox),
                 )
-                button_send_file.place(x=190-jjj, y=372, anchor=CENTER)
+                button_send_file.place(x=190 - jjj, y=372, anchor=CENTER)
 
                 # ! Coonda
-                coon_bg = PhotoImage(file = './client/coonda_100x100.gif')
+                coon_bg = PhotoImage(file="./client/coonda_100x100.gif")
                 img_bg = Label(self.window, image=coon_bg, bg=None)
                 img_bg.pack()
 
