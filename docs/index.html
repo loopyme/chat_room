@@ -156,14 +156,39 @@
 </div>
 <div class="section" id="module-cryptor.Cryptor">
 <span id="cryptor-apis"></span><h1>Cryptor APIs<a class="headerlink" href="#module-cryptor.Cryptor" title="Permalink to this headline">¶</a></h1>
-<p>Cryptor is based on AES-CBC-16</p>
+<p>Cryptor is based on AES-CBC-16 and RSA_PKCS</p>
 <dl class="function">
-<dt id="cryptor.Cryptor.en">
-<code class="sig-prename descclassname">cryptor.Cryptor.</code><code class="sig-name descname">en</code><span class="sig-paren">(</span><em class="sig-param">text</em><span class="sig-paren">)</span><a class="headerlink" href="#cryptor.Cryptor.en" title="Permalink to this definition">¶</a></dt>
+<dt id="cryptor.Cryptor.generate_RSA_key">
+<code class="sig-prename descclassname">cryptor.Cryptor.</code><code class="sig-name descname">generate_RSA_key</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#cryptor.Cryptor.generate_RSA_key" title="Permalink to this definition">¶</a></dt>
+<dd><p>generate a RSA key pair</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>tuple_of_byte (public_pem,private_pem)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="function">
+<dt id="cryptor.Cryptor.generate_AES_key">
+<code class="sig-prename descclassname">cryptor.Cryptor.</code><code class="sig-name descname">generate_AES_key</code><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#cryptor.Cryptor.generate_AES_key" title="Permalink to this definition">¶</a></dt>
+<dd><p>Generate a AES key</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>byte AES key</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="function">
+<dt id="cryptor.Cryptor.AES_encrypt">
+<code class="sig-prename descclassname">cryptor.Cryptor.</code><code class="sig-name descname">AES_encrypt</code><span class="sig-paren">(</span><em class="sig-param">text</em>, <em class="sig-param">key=None</em><span class="sig-paren">)</span><a class="headerlink" href="#cryptor.Cryptor.AES_encrypt" title="Permalink to this definition">¶</a></dt>
 <dd><p>Encrypt: Encode the string into a byte-stream, then add it to a multiple of 16, then obtained a         symmetric encryption key that is updated daily and then encrypt the string with the key.It is worth noting         that ‘’ is used in the completion.</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><p><strong>text</strong> – str String to be encrypted</p>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>text</strong> – str String to be encrypted</p></li>
+<li><p><strong>key</strong> – byte AES key</p></li>
+</ul>
 </dd>
 <dt class="field-even">Returns</dt>
 <dd class="field-even"><p>byte Encrypted byte stream</p>
@@ -172,15 +197,52 @@
 </dd></dl>
 
 <dl class="function">
-<dt id="cryptor.Cryptor.de">
-<code class="sig-prename descclassname">cryptor.Cryptor.</code><code class="sig-name descname">de</code><span class="sig-paren">(</span><em class="sig-param">byte</em><span class="sig-paren">)</span><a class="headerlink" href="#cryptor.Cryptor.de" title="Permalink to this definition">¶</a></dt>
+<dt id="cryptor.Cryptor.AES_decrypt">
+<code class="sig-prename descclassname">cryptor.Cryptor.</code><code class="sig-name descname">AES_decrypt</code><span class="sig-paren">(</span><em class="sig-param">byte</em>, <em class="sig-param">key=None</em><span class="sig-paren">)</span><a class="headerlink" href="#cryptor.Cryptor.AES_decrypt" title="Permalink to this definition">¶</a></dt>
 <dd><p>Decrypt: Obtained the symmetric encrypted key, decrypt the byte stream and removed ‘’,finally decoded         it into a string</p>
 <dl class="field-list simple">
 <dt class="field-odd">Parameters</dt>
-<dd class="field-odd"><p><strong>byte</strong> – byte Byte stream to be decrypted</p>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>byte</strong> – byte Byte stream to be decrypted</p></li>
+<li><p><strong>key</strong> – byte AES key</p></li>
+</ul>
 </dd>
 <dt class="field-even">Returns</dt>
 <dd class="field-even"><p>str Decrypted string</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="function">
+<dt id="cryptor.Cryptor.RSA_encrypt">
+<code class="sig-prename descclassname">cryptor.Cryptor.</code><code class="sig-name descname">RSA_encrypt</code><span class="sig-paren">(</span><em class="sig-param">byte</em>, <em class="sig-param">public_key</em><span class="sig-paren">)</span><a class="headerlink" href="#cryptor.Cryptor.RSA_encrypt" title="Permalink to this definition">¶</a></dt>
+<dd><p>Encrypt: import a RSA public key and use it to encrypt a byte stream</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>byte</strong> – byte Byte stream to be encrypted</p></li>
+<li><p><strong>public_key</strong> – byte RSA public_key</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>byte Encrypted byte stream</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="function">
+<dt id="cryptor.Cryptor.RSA_decrypt">
+<code class="sig-prename descclassname">cryptor.Cryptor.</code><code class="sig-name descname">RSA_decrypt</code><span class="sig-paren">(</span><em class="sig-param">byte</em>, <em class="sig-param">private_key</em><span class="sig-paren">)</span><a class="headerlink" href="#cryptor.Cryptor.RSA_decrypt" title="Permalink to this definition">¶</a></dt>
+<dd><p>Decrypt: import a RSA public key and use it to decrypt a byte stream</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>byte</strong> – byte Byte stream to be decrypted</p></li>
+<li><p><strong>private_key</strong> – byte RSA private_key</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>byte Decrypted byte</p>
 </dd>
 </dl>
 </dd></dl>
@@ -196,6 +258,12 @@
 <code class="sig-prename descclassname">server.ClientThread.</code><code class="sig-name descname">run</code><span class="sig-paren">(</span><em class="sig-param">self</em><span class="sig-paren">)</span><a class="headerlink" href="#server.ClientThread.run" title="Permalink to this definition">¶</a></dt>
 <dd><p>main process of ClientThread
 Instantiate one handler, recv byte stream and decrypt it, then load it as json, pass the json to the handler.         When handler returns logout information or some error arise, the current thread is terminated and socket is          closed.</p>
+</dd></dl>
+
+<dl class="function">
+<dt id="server.ClientThread.key_exchange">
+<code class="sig-prename descclassname">server.ClientThread.</code><code class="sig-name descname">key_exchange</code><span class="sig-paren">(</span><em class="sig-param">self</em><span class="sig-paren">)</span><a class="headerlink" href="#server.ClientThread.key_exchange" title="Permalink to this definition">¶</a></dt>
+<dd><p>exchange AES key with client: The client generates an RSA key pair and sends the public key to the server,          which generates an AES key for this socket. The server uses the RSA public key of the client to encrypt the         AES key as a ciphertext and sends it back to the client, who decrypts the ciphertext and obtains the AES key         of the socket</p>
 </dd></dl>
 
 </div>

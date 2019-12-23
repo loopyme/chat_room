@@ -13,7 +13,7 @@ Cryptor APIs
 ============
 
 .. automodule:: cryptor.Cryptor
-   :members: en,de
+   :members: set_AES_key, generate_RSA_key, generate_AES_key, AES_encrypt, AES_decrypt, RSA_encrypt, RSA_decrypt
 
 Server APIs
 ===========
@@ -22,7 +22,7 @@ ClientThread
 ^^^^^^^^^^^^
 
 .. automodule:: server.ClientThread
-   :members: run
+   :members: run, key_exchange
 
 MsgHandler
 ^^^^^^^^^^
