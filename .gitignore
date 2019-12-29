@@ -130,7 +130,5 @@ dmypy.json
 
 .idea/
 .DS_store
-doc/
 .vscode/
 makedoc/
-docs/*.py
