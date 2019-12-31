@@ -1,7 +1,5 @@
 from socket import *
-import threading
-import json
-import hashlib, datetime, base64
+import threading, json, datetime, base64
 
 from Crypto.Cipher import AES, PKCS1_v1_5
 from Crypto import Random
@@ -304,9 +302,13 @@ class Handler:
             data["status"] = False
             data["info"] = "该用户名已被占用"
         else:  # login success
+            temp_user = list(Handler.user_pool.keys())
             data["status"] = True
             Handler.user_pool[self.user] = data["username"]
         self.send_json_back(data)
+
+        self.send_json(temp_user,
+                       {"type": "list", "list": list(Handler.user_pool.values())})
 
     def logout(self, _):
         """
@@ -330,6 +332,7 @@ class Handler:
         :param data: json
         """
         data["list"] = list(Handler.user_pool.values())
+        print(data)
         self.send_json_back(data)
 
     def __main__(self, data):

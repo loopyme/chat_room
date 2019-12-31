@@ -3,16 +3,15 @@ import json
 from tkinter import *
 from tkinter.filedialog import askopenfilename
 import threading
-import struct
 import uuid
-import hashlib, datetime, base64
+import datetime, base64
 
 from Crypto.Cipher import AES, PKCS1_v1_5
 from Crypto import Random
 from Crypto.PublicKey import RSA
 
 SENDERPORT = 1501
-HOST = "127.0.0.1"  # 'chat.loopy.tech'
+HOST = '127.0.0.1'#'chat.loopy.tech'
 PORT = 8945
 BUFFERSIZE = 2048
 ADDR = (HOST, PORT)
@@ -26,18 +25,23 @@ class Cryptor:
         init func
         :Note: should not be called
         """
-        raise AttributeError("Cryptor should not be instantiated")
+        raise AttributeError("Cryptor should not be instance")
 
     @classmethod
     def set_AES_key(cls, AES_key):
         cls.__AES_key = AES_key
+
+    @classmethod
+    def set_RSA_key(cls, pri_key, pub_key):
+        cls.__RSA_key = (pri_key, pub_key)
 
     @staticmethod
     def generate_RSA_key():
         """
         generate a RSA key pair
 
-        :return: tuple_of_byte (public_pem,private_pem)
+        :return public_pem: byte
+        :return private_pem: byte
         """
         rsa = RSA.generate(1024, Random.new().read)
         private_pem = rsa.exportKey()
@@ -49,7 +53,7 @@ class Cryptor:
         """
         Generate a AES key
 
-        :return: byte AES key
+        :return key: byte
         """
         return Random.get_random_bytes(16)
 
@@ -82,8 +86,8 @@ class Cryptor:
         plain_text = AES.new(key, AES.MODE_CBC, key).decrypt(byte)
         return plain_text.decode().rstrip("\0")
 
-    @staticmethod
-    def RSA_encrypt(byte, public_key):
+    @classmethod
+    def RSA_encrypt(cls, byte, public_key=None):
         """
         Encrypt: import a RSA public key and use it to encrypt a byte stream
 
@@ -91,13 +95,14 @@ class Cryptor:
         :param public_key: byte RSA public_key
         :return: byte Encrypted byte stream
         """
+        public_key = public_key if public_key is not None else cls.__RSA_key[1]
         rsa_key = RSA.importKey(public_key)
         cipher = PKCS1_v1_5.new(rsa_key)
         cipher_byte = base64.b64encode(cipher.encrypt(byte))
         return cipher_byte
 
-    @staticmethod
-    def RSA_decrypt(byte, private_key):
+    @classmethod
+    def RSA_decrypt(cls, byte, private_key=None):
         """
         Decrypt: import a RSA public key and use it to decrypt a byte stream
 
@@ -105,6 +110,7 @@ class Cryptor:
         :param private_key: byte RSA private_key
         :return: byte Decrypted byte
         """
+        private_key = private_key if private_key is not None else cls.__RSA_key[0]
         rsa_key = RSA.importKey(private_key)
         cipher = PKCS1_v1_5.new(rsa_key)
         text = cipher.decrypt(base64.b64decode(byte), "ERROR")
@@ -116,7 +122,7 @@ class Client:
         self.connected = False
 
     def connect(self):
-        """连接服务器"""
+        """connect to the server and exchange key"""
         if not self.connected:
             self.client_socket = socket(AF_INET, SOCK_STREAM)
             self.client_socket.connect(ADDR)
@@ -137,12 +143,12 @@ class Client:
         Cryptor.set_AES_key(Cryptor.RSA_decrypt(cipher_RSA_key, pri_key))
 
     def disconnect(self):
-        """断开服务器"""
+        """disconnected to the server"""
         self.client_socket.close()
 
     @staticmethod
     def error_window(error_info):
-        """错误提示界面"""
+        """error msg window"""
         error_window = Tk()
         screenwidth = error_window.winfo_screenwidth()
         screenheight = error_window.winfo_screenheight()
@@ -162,14 +168,22 @@ class Client:
         error_window.mainloop()
 
     class Login:
-        """登录界面"""
+        """login window"""
 
         def __init__(self, father):
             self.father = father
 
         def login(self, username, login_window):
-            """登录操作"""
+            """
+            login func
+            :param username: string username
+            :param login_window: TK window
+            """
             self.father.username = username
+            if username == "":
+                self.father.error_window("用户名不能为空！！！")
+                return False
+
             data = {"type": "login", "username": username}
             try:
                 self.father.connect()
@@ -184,9 +198,9 @@ class Client:
                 raw_data = Cryptor.AES_decrypt(socket.recv(BUFFERSIZE))
                 recv_data = json.loads(raw_data)
                 if (
-                    recv_data["type"] == "login"
-                    and recv_data["username"] == username
-                    and recv_data["status"] == True
+                        recv_data["type"] == "login"
+                        and recv_data["username"] == username
+                        and recv_data["status"] == True
                 ):
                     # login success!
                     mainFrame = self.father.MainFrame(self.father)
@@ -200,41 +214,25 @@ class Client:
                         self.father.error_window("未知登录错误")
 
         def window(self):
-            """登录窗口GUI"""
+            """
+            login window GUI
+            """
             window = Tk()
-            # mycanvas=Canvas(window,width=580,height=400,bg='red')
-            # mycanvas.pack()
-            # window.attributes("bg",red)
-            screenwidth = window.winfo_screenwidth()
-            screenheight = window.winfo_screenheight()
-            width = 300
-            height = 400
+            width = 400
+            height = 60
             alignstr = "%dx%d+%d+%d" % (
                 width,
                 height,
-                (screenwidth - width) / 2,
-                (screenheight - height) / 2,
+                30,
+                5,
             )
             window.geometry(alignstr)
-            window.title("登录")
+            window.title("聊天室登录-请输入你的用户名")
+            window["background"] = "white"
             window.resizable(width=False, height=False)
-            # frame = Frame(window)
-            # frame.pack(expand=YES, fill=BOTH)
 
-            # Label
-            # lable = Label(window, font=("Wawati SC", 30), text="请输入用户名", anchor="n").pack(
-            #     padx=10, pady=15, fill="x"
-            # ).place(relx=0.15, rely=0.1)
-
-            lable = Label(window, font=("Wawati SC", 30), text="请输入用户名", anchor="n")
-            lable.place(relx=0.19, rely=0.01)
-            # lable.pack(
-            #     padx=10, pady=15, fill="x"
-            # )
-            # lable
-            # Username Entry
-            username_entry = Entry(window, font=17, justify="center")
-            username_entry.place(relx=0.05, rely=0.15, relwidth=0.9, relheight=0.1)
+            username_entry = Entry(window, width=30, justify="center")
+            username_entry.place(x=180, y=25, anchor=CENTER)
             username_entry.bind(
                 "<Key-Return>", lambda x: self.login(username_entry.get(), window)
             )
@@ -243,29 +241,9 @@ class Client:
             button = Button(
                 window,
                 text="登录",
-                font=50,
                 command=lambda: self.login(username_entry.get(), window),
             )
-            button.place(relx=0.2, rely=0.3, relheight=0.1, relwidth=0.2)
-
-            # ! Logo Coon
-            # Coonda = Label(window, font="Arial, 20", text="请输入用户名", anchor="n").pack(
-            #     padx=10, pady=15, fill="x"
-            # )
-
-            img_gif = PhotoImage(file="./client/coonda1.gif")
-            label_img = Label(window, image=img_gif)
-            label_img.pack()
-            label_img.place(relx=0.16, rely=0.5)
-            label_img.borderwidth = 0
-
-            coonda_text = Label(window, text="COONDA", font=("Phosphate", 30))
-            # coonda_text.borderwidth = 0
-            coonda_text.place(relx=0.29, rely=0.45)
-
-            # Exit Button
-            button = Button(window, text="退出", font=50, command=window.destroy)
-            button.place(relx=0.6, rely=0.3, relheight=0.1, relwidth=0.2)
+            button.place(x=350, y=25, anchor=CENTER)
 
             window.mainloop()
 
@@ -273,14 +251,14 @@ class Client:
             self.window()
 
     class MainFrame:
-        """聊天主窗口"""
+        """chat-room main window"""
 
         def __main__(self):
-            # 开启监听线程
+            # create listen thread
             self._listen_thread = self.ListenThread(self.socket, self)
             self._listen_thread.start()
 
-            # 建立窗口
+            # create window
             self._window = self.Window(self)
             self._window.__main__()
 
@@ -294,14 +272,14 @@ class Client:
             self.did_get_ack = False
 
         def exit(self):
-            """点击退出按钮"""
+            """exit func"""
             self.send_socket.close()
             self.recv_socket.close()
             self._listen_thread.join()
             self._window.destroy()
 
         class ListenThread(threading.Thread):
-            """Socket监听线程，对收到的信息作出相应反馈"""
+            """listen the sockect, deal with the msg"""
 
             def __init__(self, socket, father):
                 threading.Thread.__init__(self)
@@ -314,7 +292,7 @@ class Client:
                     try:
                         raw_data = Cryptor.AES_decrypt(self.socket.recv(BUFFERSIZE))
                         data = json.loads(raw_data)
-                        # print(data)
+
                     except:
                         break
                     switcher = {
@@ -332,10 +310,8 @@ class Client:
 
             def send_ack(self):
                 self.socket.send(Cryptor.AES_encrypt(json.dumps({"type": "ack"})))
-                # print('send_ack' + "=" * 64)
 
             def recv_file(self, data):
-                # print("[RECV_FILE]")
 
                 self.send_ack()
                 file_remain_size = data["size"]
@@ -355,8 +331,6 @@ class Client:
 
                 file_name = "./" + str(uuid.uuid4()) + "." + file_ext
 
-                # print(file_name, file_remain_size)
-
                 with open(file_name, "wb") as f:
                     f.write(bin_data)
 
@@ -365,7 +339,7 @@ class Client:
                 text_box.insert(END, t)
 
             def list(self, data):
-                """刷新列表"""
+                """update chat-room user list"""
                 listbox = self.father.listbox
                 username_list = ["群聊"]
                 username_list += data["list"]
@@ -375,15 +349,15 @@ class Client:
                     listbox.insert(END, l)  # 插入新列表
 
             def chat(self, data):
-                """接收聊天信息并打印"""
+                """recv a msg and print"""
                 text_box = self.father.text_box
-                # print(data)
+
                 text = (
-                    ("[群聊]" if data["type"] == "group_msg" else "")
-                    + data["from"]
-                    + ": "
-                    + data["msg"]
-                    + "\n"
+                        ("[群聊]" if data["type"] == "group_msg" else "")
+                        + data["from"]
+                        + ": "
+                        + data["msg"]
+                        + "\n"
                 )
                 text_box.insert(END, text)
 
@@ -396,21 +370,21 @@ class Client:
 
             @staticmethod
             def refresh(socket):
-                """点击刷新按钮"""
+                """update chat-room user list"""
                 data = {"type": "list"}
                 raw_data = Cryptor.AES_encrypt(json.dumps(data))
                 socket.send(raw_data)
 
             def send_file(self, socket, listbox):
-                """点击发送文件按钮"""
+                """send a file func"""
                 all_items = listbox.get(
                     0, END
                 )  # tuple with text of all items in Listbox
                 sel_idx = listbox.curselection()  # tuple with indexes of selected items
                 target = [all_items[item] for item in sel_idx]
-                # print(target)
+
                 filename = askopenfilename()
-                # print(filename)
+
                 ext = filename.split(".")[-1]
                 with open(filename, "rb") as f:
                     data = f.read()
@@ -439,7 +413,6 @@ class Client:
                 text_box = self.father.text_box
                 text_box.insert(END, t)
 
-            # @staticmethod
             def recv_ack(self):
                 loop_start_time = datetime.datetime.now()
                 while (datetime.datetime.now() - loop_start_time).seconds < 3:
@@ -448,20 +421,20 @@ class Client:
                         break
 
             def send(self, socket, listbox, entry_input):
-                """点击发送按钮"""
-                # print(listbox.curselection())
+                """send a msg"""
+
                 text = entry_input.get()
                 all_items = listbox.get(
                     0, END
-                )  # tuple with text of all items in Listbox
-                sel_idx = listbox.curselection()  # tuple with indexes of selected items
+                )
+                sel_idx = listbox.curselection()
                 target = [all_items[item] for item in sel_idx]
-                # print(target)
+
                 username = self.father.father.username
                 if "群聊" in target:
                     data = {"type": "group_msg", "msg": text, "from": username}
                 else:
-                    # 私聊
+
                     data = {
                         "type": "private_msg",
                         "msg": text,
@@ -477,7 +450,7 @@ class Client:
 
             @staticmethod
             def didSelectOneItem(listbox, label_target):
-                """双击选择列表"""
+                """select target"""
                 try:
                     label_target["text"] = listbox.get(listbox.curselection())
                 except:
@@ -500,36 +473,38 @@ class Client:
                     (screenwidth - width) / 2,
                     (screenheight - height) / 2,
                 )
+                # self.window["background"] = "white"
                 self.window.geometry(alignstr)
                 self.window.title(
-                    "iCoonda Chat Room [Your name: {}]".format(grandfather.username)
+                    "聊天室"
                 )
                 self.window.resizable(width=False, height=False)
                 # 背景
-                f = Frame(self.window, bg="#EEEEEE", width=600, height=400)
-                # f.place(x=0, y=0)
+                f = Frame(self.window, bg="white", width=600, height=400)
+
                 f.pack()
 
                 # ! 聊天内容框
 
-                text_box = Text(f, bg="#FFFFFF", width=60, height=22, bd=0)
+                text_box = Text(f, bg="#FFFFFF", width=60, height=19, bd=0, borderwidth=1)
                 text_box.place(x=150, y=10, anchor=NW)
                 text_box.bind("<KeyPress>", lambda x: "break")
                 father.text_box = text_box
                 text_box.focus_set()
 
                 # ! 右侧选择聊天对象
-                # Label(f, text="双击选择发送对象:", bg="#EEEEEE").place(x=460, y=10, anchor=NW)
+
                 listbox = Listbox(
                     f,
                     width=13,
-                    height=23,
+                    height=20,
                     bg="#FFFFFF",
-                    borderwidth=0,
+                    borderwidth=1,
                     highlightthickness=0,
                     selectmode=EXTENDED,
+
                 )
-                listbox.place(x=5, y=5, anchor=NW)
+                listbox.place(x=10, y=10, anchor=NW)
                 # listbox.
                 father.listbox = listbox
                 jjj = -80
@@ -537,23 +512,23 @@ class Client:
                 button_refresh = Button(
                     f,
                     text="刷新列表",
-                    bd=1,
-                    relief=FLAT,
+                    # bd=1,
+                    # relief=FLAT,
                     command=lambda: self.refresh(father.socket),
+                    bg="white",
                 )
-                button_refresh.place(x=300 - jjj, y=372, anchor=CENTER)
-
+                # button_refresh.place(x=300 - jjj, y=372, anchor=CENTER)
+                button_refresh.place(x=70, y=370, anchor=CENTER)
                 # 下方内容输入框
-                # label_target = Label(f, text="群聊", bg="#FFFFFF", width=8, height=1)
-                # label_target.place(x=150, y=320)
+
                 label_target = None
                 listbox.bind(
                     "<Double-Button-1>",
                     lambda x: self.didSelectOneItem(listbox, label_target),
                 )
-                # self.label_target = label_target
-                entry_input = Entry(f, width=30)
-                entry_input.place(x=230, y=318)
+
+                entry_input = Entry(f, width=46)
+                entry_input.place(x=200, y=318, anchor=NW)
                 entry_input.bind(
                     "<Key-Return>",
                     lambda x: self.send(father.socket, listbox, entry_input),
@@ -562,38 +537,37 @@ class Client:
 
                 # 清屏按钮
                 button_clear = Button(
-                    f, text="清屏", command=lambda: text_box.delete(0.0, END)
+                    f, text="清屏", command=lambda: text_box.delete(0.0, END),
+                    bg="white"
                 )
-                button_clear.place(x=480, y=372, anchor=CENTER)
+                button_clear.place(x=500, y=370, anchor=CENTER)
 
                 # 发送按钮
                 button_send = Button(
                     f,
-                    text="发送",
+                    text="发送消息",
                     command=lambda: self.send(father.socket, listbox, entry_input),
+                    bg="white",
                 )
-                button_send.place(x=540, y=333, anchor=CENTER)
+                button_send.place(x=190, y=370, anchor=CENTER)
 
-                # ! 退出按钮🔘
-                button_send = Button(f, text="退出", command=self.father.exit,)
-                button_send.place(x=560, y=371, anchor=CENTER)
+                button_send = Button(f, text="退出", command=self.father.exit, bg="white")
+                button_send.place(x=560, y=370, anchor=CENTER)
 
-                # ! button send file
                 # 发送文件
                 button_send_file = Button(
                     f,
                     text="发送文件",
                     command=lambda: self.send_file(father.socket, listbox),
+                    bg="white",
                 )
-                button_send_file.place(x=190 - jjj, y=372, anchor=CENTER)
+                button_send_file.place(x=275, y=370, anchor=CENTER)
 
-                # ! Coonda
-                coon_bg = PhotoImage(file="./client/coonda_100x100.gif")
-                img_bg = Label(self.window, image=coon_bg, bg=None)
-                img_bg.pack()
-
-                img_bg.place(x=0, y=300)
-                img_bg.borderwidth = 0
+                name_box = Label(f, text="{}:".format(grandfather.username), bg="#FFFFFF", width=6, height=1, bd=0,
+                                 borderwidth=0)
+                name_box.place(x=150, y=318, anchor=NW)
+                name_box.bind("<KeyPress>", lambda x: "break")
+                name_box.focus_set()
 
                 # 刷新列表
                 self.refresh(father.socket)
