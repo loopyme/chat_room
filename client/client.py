@@ -1,120 +1,12 @@
-from socket import *
-import json
-from tkinter import *
+from loopyCryptor import Cryptor
+import json, uuid, datetime, threading
+from socket import socket, AF_INET, SOCK_STREAM
 from tkinter.filedialog import askopenfilename
-import threading
-import uuid
-import datetime, base64
-
-from Crypto.Cipher import AES, PKCS1_v1_5
-from Crypto import Random
-from Crypto.PublicKey import RSA
+from tkinter import Label, Button, Tk, Entry, CENTER, END, Listbox, EXTENDED, NW, Text, Frame
 
 SENDERPORT = 1501
-HOST = '127.0.0.1'#'chat.loopy.tech'
-PORT = 8945
 BUFFERSIZE = 2048
-ADDR = (HOST, PORT)
-
-
-class Cryptor:
-    """Cryptor is based on AES-CBC-16 and RSA_PKCS"""
-
-    def __init__(self):
-        """
-        init func
-        :Note: should not be called
-        """
-        raise AttributeError("Cryptor should not be instance")
-
-    @classmethod
-    def set_AES_key(cls, AES_key):
-        cls.__AES_key = AES_key
-
-    @classmethod
-    def set_RSA_key(cls, pri_key, pub_key):
-        cls.__RSA_key = (pri_key, pub_key)
-
-    @staticmethod
-    def generate_RSA_key():
-        """
-        generate a RSA key pair
-
-        :return public_pem: byte
-        :return private_pem: byte
-        """
-        rsa = RSA.generate(1024, Random.new().read)
-        private_pem = rsa.exportKey()
-        public_pem = rsa.publickey().exportKey()
-        return public_pem, private_pem
-
-    @staticmethod
-    def generate_AES_key():
-        """
-        Generate a AES key
-
-        :return key: byte
-        """
-        return Random.get_random_bytes(16)
-
-    @classmethod
-    def AES_encrypt(cls, text, key=None):
-        """
-        Encrypt: Encode the string into a byte-stream, then add it to a multiple of 16, then obtained a \
-        symmetric encryption key that is updated daily and then encrypt the string with the key.It is worth noting \
-        that '\0' is used in the completion.
-
-        :param text: str String to be encrypted
-        :param key: byte AES key
-        :return: byte Encrypted byte stream
-        """
-        key = cls.__AES_key if key is None else key
-        text += "\0" * (16 - (len(text.encode()) % 16))
-        return AES.new(key, AES.MODE_CBC, key).encrypt(text.encode())
-
-    @classmethod
-    def AES_decrypt(cls, byte, key=None):
-        """
-        Decrypt: Obtained the symmetric encrypted key, decrypt the byte stream and removed '\0',finally decoded\
-         it into a string
-
-        :param byte: byte Byte stream to be decrypted
-        :param key: byte AES key
-        :return: str Decrypted string
-        """
-        key = cls.__AES_key if key is None else key
-        plain_text = AES.new(key, AES.MODE_CBC, key).decrypt(byte)
-        return plain_text.decode().rstrip("\0")
-
-    @classmethod
-    def RSA_encrypt(cls, byte, public_key=None):
-        """
-        Encrypt: import a RSA public key and use it to encrypt a byte stream
-
-        :param byte: byte Byte stream to be encrypted
-        :param public_key: byte RSA public_key
-        :return: byte Encrypted byte stream
-        """
-        public_key = public_key if public_key is not None else cls.__RSA_key[1]
-        rsa_key = RSA.importKey(public_key)
-        cipher = PKCS1_v1_5.new(rsa_key)
-        cipher_byte = base64.b64encode(cipher.encrypt(byte))
-        return cipher_byte
-
-    @classmethod
-    def RSA_decrypt(cls, byte, private_key=None):
-        """
-        Decrypt: import a RSA public key and use it to decrypt a byte stream
-
-        :param byte: byte Byte stream to be decrypted
-        :param private_key: byte RSA private_key
-        :return: byte Decrypted byte
-        """
-        private_key = private_key if private_key is not None else cls.__RSA_key[0]
-        rsa_key = RSA.importKey(private_key)
-        cipher = PKCS1_v1_5.new(rsa_key)
-        text = cipher.decrypt(base64.b64decode(byte), "ERROR")
-        return text
+ADDR = ("chat.loopy.tech", 8950)
 
 
 class Client:
@@ -137,10 +29,10 @@ class Client:
          of the socket
         
         """
-        pub_key, pri_key = Cryptor.generate_RSA_key()
+        pub_key, pri_key = Cryptor.generate_RSA_key(ret_str=False)
         self.client_socket.send(pub_key)
         cipher_RSA_key = self.client_socket.recv(BUFFERSIZE)
-        Cryptor.set_AES_key(Cryptor.RSA_decrypt(cipher_RSA_key, pri_key))
+        Cryptor.set_AES_key(Cryptor.RSA_decrypt(cipher_RSA_key, pri_key, ret_str=False))
 
     def disconnect(self):
         """disconnected to the server"""
@@ -220,12 +112,7 @@ class Client:
             window = Tk()
             width = 400
             height = 60
-            alignstr = "%dx%d+%d+%d" % (
-                width,
-                height,
-                30,
-                5,
-            )
+            alignstr = "%dx%d+%d+%d" % (width, height, 30, 5,)
             window.geometry(alignstr)
             window.title("聊天室登录-请输入你的用户名")
             window["background"] = "white"
@@ -424,9 +311,7 @@ class Client:
                 """send a msg"""
 
                 text = entry_input.get()
-                all_items = listbox.get(
-                    0, END
-                )
+                all_items = listbox.get(0, END)
                 sel_idx = listbox.curselection()
                 target = [all_items[item] for item in sel_idx]
 
@@ -475,9 +360,7 @@ class Client:
                 )
                 # self.window["background"] = "white"
                 self.window.geometry(alignstr)
-                self.window.title(
-                    "聊天室"
-                )
+                self.window.title("聊天室")
                 self.window.resizable(width=False, height=False)
                 # 背景
                 f = Frame(self.window, bg="white", width=600, height=400)
@@ -486,14 +369,15 @@ class Client:
 
                 # ! 聊天内容框
 
-                text_box = Text(f, bg="#FFFFFF", width=60, height=19, bd=0, borderwidth=1)
+                text_box = Text(
+                    f, bg="#FFFFFF", width=60, height=19, bd=0, borderwidth=1
+                )
                 text_box.place(x=150, y=10, anchor=NW)
                 text_box.bind("<KeyPress>", lambda x: "break")
                 father.text_box = text_box
                 text_box.focus_set()
 
                 # ! 右侧选择聊天对象
-
                 listbox = Listbox(
                     f,
                     width=13,
@@ -502,7 +386,6 @@ class Client:
                     borderwidth=1,
                     highlightthickness=0,
                     selectmode=EXTENDED,
-
                 )
                 listbox.place(x=10, y=10, anchor=NW)
                 # listbox.
@@ -537,8 +420,7 @@ class Client:
 
                 # 清屏按钮
                 button_clear = Button(
-                    f, text="清屏", command=lambda: text_box.delete(0.0, END),
-                    bg="white"
+                    f, text="清屏", command=lambda: text_box.delete(0.0, END), bg="white"
                 )
                 button_clear.place(x=500, y=370, anchor=CENTER)
 
@@ -563,8 +445,15 @@ class Client:
                 )
                 button_send_file.place(x=275, y=370, anchor=CENTER)
 
-                name_box = Label(f, text="{}:".format(grandfather.username), bg="#FFFFFF", width=6, height=1, bd=0,
-                                 borderwidth=0)
+                name_box = Label(
+                    f,
+                    text="{}:".format(grandfather.username),
+                    bg="#FFFFFF",
+                    width=6,
+                    height=1,
+                    bd=0,
+                    borderwidth=0,
+                )
                 name_box.place(x=150, y=318, anchor=NW)
                 name_box.bind("<KeyPress>", lambda x: "break")
                 name_box.focus_set()

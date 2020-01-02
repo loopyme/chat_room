@@ -1,108 +1,9 @@
-from socket import *
-import threading, json, datetime, base64
+import threading, json, datetime
+from loopyCryptor import Cryptor
+from socket import socket, AF_INET, SOCK_STREAM
 
-from Crypto.Cipher import AES, PKCS1_v1_5
-from Crypto import Random
-from Crypto.PublicKey import RSA
-
-HOST = ""
-PORT = 8945
 BUFFERSIZE = 2048
-ADDR = (HOST, PORT)
-
-
-class Cryptor:
-    """Cryptor is based on AES-CBC-16 and RSA_PKCS"""
-
-    def __init__(self):
-        """
-        init func
-        :Note: should not be called
-        """
-        raise AttributeError("Cryptor should not be instance")
-
-    @classmethod
-    def set_AES_key(cls, AES_key):
-        cls.__AES_key = AES_key
-
-    @staticmethod
-    def generate_RSA_key():
-        """
-        generate a RSA key pair
-
-        :return public_pem: byte
-        :return private_pem: byte
-        """
-        rsa = RSA.generate(1024, Random.new().read)
-        private_pem = rsa.exportKey()
-        public_pem = rsa.publickey().exportKey()
-        return public_pem, private_pem
-
-    @staticmethod
-    def generate_AES_key():
-        """
-        Generate a AES key
-
-        :return key: byte
-        """
-        return Random.get_random_bytes(16)
-
-    @classmethod
-    def AES_encrypt(cls, text, key=None):
-        """
-        Encrypt: Encode the string into a byte-stream, then add it to a multiple of 16, then obtained a \
-        symmetric encryption key that is updated daily and then encrypt the string with the key.It is worth noting \
-        that '\0' is used in the completion.
-
-        :param text: str String to be encrypted
-        :param key: byte AES key
-        :return: byte Encrypted byte stream
-        """
-        key = cls.__AES_key if key is None else key
-        text += "\0" * (16 - (len(text.encode()) % 16))
-        return AES.new(key, AES.MODE_CBC, key).encrypt(text.encode())
-
-    @classmethod
-    def AES_decrypt(cls, byte, key=None):
-        """
-        Decrypt: Obtained the symmetric encrypted key, decrypt the byte stream and removed '\0',finally decoded\
-         it into a string
-
-        :param byte: byte Byte stream to be decrypted
-        :param key: byte AES key
-        :return: str Decrypted string
-        """
-        key = cls.__AES_key if key is None else key
-        plain_text = AES.new(key, AES.MODE_CBC, key).decrypt(byte)
-        return plain_text.decode().rstrip("\0")
-
-    @staticmethod
-    def RSA_encrypt(byte, public_key):
-        """
-        Encrypt: import a RSA public key and use it to encrypt a byte stream
-
-        :param byte: byte Byte stream to be encrypted
-        :param public_key: byte RSA public_key
-        :return: byte Encrypted byte stream
-        """
-        rsa_key = RSA.importKey(public_key)
-        cipher = PKCS1_v1_5.new(rsa_key)
-        cipher_byte = base64.b64encode(cipher.encrypt(byte))
-        return cipher_byte
-
-    @staticmethod
-    def RSA_decrypt(byte, private_key):
-        """
-        Decrypt: import a RSA public key and use it to decrypt a byte stream
-
-        :param byte: byte Byte stream to be decrypted
-        :param private_key: byte RSA private_key
-        :return: byte Decrypted byte
-        """
-        rsa_key = RSA.importKey(private_key)
-        cipher = PKCS1_v1_5.new(rsa_key)
-        text = cipher.decrypt(base64.b64decode(byte), "ERROR")
-        return text
+ADDR = ("", 8950)
 
 
 class User:
@@ -305,10 +206,10 @@ class Handler:
             temp_user = list(Handler.user_pool.keys())
             data["status"] = True
             Handler.user_pool[self.user] = data["username"]
+            self.send_json(
+                temp_user, {"type": "list", "list": list(Handler.user_pool.values())}
+            )
         self.send_json_back(data)
-
-        self.send_json(temp_user,
-                       {"type": "list", "list": list(Handler.user_pool.values())})
 
     def logout(self, _):
         """
