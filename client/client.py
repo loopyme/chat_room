@@ -28,7 +28,7 @@ class Cryptor:
         raise AttributeError("Cryptor should not be instance")
 
     @staticmethod
-    def __key():
+    def __get_key():
         """
         ! private
         Generate a daily replacement key
@@ -49,7 +49,7 @@ class Cryptor:
         :return: byte Encrypted byte stream
         """
 
-        key = Cryptor.__key()
+        key = Cryptor.__get_key()
         text += "\0" * (16 - (len(text.encode()) % 16))
         return AES.new(key, AES.MODE_CBC, key).encrypt(text.encode())
 
@@ -62,7 +62,7 @@ class Cryptor:
         :param byte: byte Byte stream to be decrypted
         :return: str Decrypted string
         """
-        key = Cryptor.__key()
+        key = Cryptor.__get_key()
         plain_text = AES.new(key, AES.MODE_CBC, key).decrypt(byte)
         return plain_text.decode().rstrip("\0")
 
@@ -185,7 +185,6 @@ class Client:
             label_img.borderwidth = 0
 
             coonda_text = Label(window, text="COONDA", font=("Phosphate", 30))
-            # coonda_text.borderwidth = 0
             coonda_text.place(relx=0.29, rely=0.45)
 
             # Exit Button
@@ -435,7 +434,6 @@ class Client:
 
                 # 背景
                 f = Frame(self.window, bg="#EEEEEE", width=600, height=400)
-                # f.place(x=0, y=0)
                 f.pack()
 
                 # ! 聊天内容框
@@ -487,7 +485,7 @@ class Client:
                     text="发送文件",
                     command=lambda: self.send_file(father.socket, listbox),
                 )
-                button_send_file.place(x=190-jjj, y=372, anchor=CENTER)
+                button_send_file.place(x=390, y=372, anchor=CENTER)
 
                 # ! Coonda Logo Positioning
                 coon_bg = PhotoImage(file = './client/coonda_100x100.gif')
