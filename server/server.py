@@ -3,6 +3,7 @@ import threading
 import json
 from Crypto.Cipher import AES
 import hashlib, datetime
+import time
 
 HOST = ""
 PORT = 8945
@@ -32,7 +33,7 @@ class Cryptor:
         return sha256.hexdigest()[16:32].encode()
 
     @staticmethod
-    def en(text):
+    def encrypt(text):
         """
         Encrypt: Encode the string into a byte-stream, then add it to a multiple of 16, then obtained a \
         symmetric encryption key that is updated daily and then encrypt the string with the key.It is worth noting \
@@ -47,7 +48,7 @@ class Cryptor:
         return AES.new(key, AES.MODE_CBC, key).encrypt(text.encode())
 
     @staticmethod
-    def de(byte):
+    def decrypt(byte):
         """
         Decrypt: Obtained the symmetric encrypted key, decrypt the byte stream and removed '\0',finally decoded\
          it into a string
@@ -68,12 +69,12 @@ class User:
         self.client_socket = client_socket
 
 
-class Handler:
+class MessageProcessor:
     """
     Handle the msg or files
     """
 
-    user_pool = {}  # user: username
+    user_list = {}  # user: username
     ack_buffer = []
 
     def __init__(self, user):
@@ -88,7 +89,7 @@ class Handler:
         :param user: user_instance user to be removed
         """
         try:
-            cls.user_pool.pop(user)
+            cls.user_list.pop(user)
         except Exception as e:
             log("[Handler.remove_user] {}".format(e), "ERROR")
 
@@ -103,7 +104,7 @@ class Handler:
         """
         raw_data = json.dumps(data)
         for user in users:
-            user.client_socket.send(Cryptor.en(raw_data))
+            user.client_socket.send(Cryptor.encrypt(raw_data))
         log("[send_json] " + raw_data, "SUCCESS")
 
     def send_json_back(self, data):
@@ -113,7 +114,7 @@ class Handler:
         :param data: json data to be sent
         """
         raw_data = json.dumps(data)
-        self.user.client_socket.send(Cryptor.en(raw_data))
+        self.user.client_socket.send(Cryptor.encrypt(raw_data))
         log("[send_to_user] " + raw_data, "SUCCESS")
 
     def send_file(self, users, size, ext, bin_data):
@@ -133,7 +134,7 @@ class Handler:
                 [user],
                 {
                     "type": "file",
-                    "from": Handler.user_pool[self.user],
+                    "from": MessageProcessor.user_list[self.user],
                     "size": size,
                     "ext": ext,
                 },
@@ -141,7 +142,7 @@ class Handler:
 
             self.recv_ack(user)
             user.client_socket.send(bin_data)
-            log("[send_file] To:" + Handler.user_pool[user], "SUCCESS")
+            log("[send_file] To:" + MessageProcessor.user_list[user], "SUCCESS")
 
     def recv_file(self, size):
         """
@@ -160,14 +161,14 @@ class Handler:
             bin_data += buffer
             if not buffer:
                 break
-        log("[recv_file] From:" + Handler.user_pool[self.user], "SUCCESS")
+        log("[recv_file] From:" + MessageProcessor.user_list[self.user], "SUCCESS")
         return bin_data
 
     def send_ack(self):
         """
         send ack to allow client send file
         """
-        self.user.client_socket.send(Cryptor.en(json.dumps({"type": "ack"})))
+        self.user.client_socket.send(Cryptor.encrypt(json.dumps({"type": "ack"})))
         log("[send_ack]", "SUCCESS")
 
     def recv_ack(self, user):
@@ -181,12 +182,12 @@ class Handler:
         if user.address != self.user.address:
             loop_start_time = datetime.datetime.now()
             while (datetime.datetime.now() - loop_start_time).seconds < 3:
-                if user in Handler.ack_buffer:
-                    Handler.ack_buffer.remove(user)
+                if user in MessageProcessor.ack_buffer:
+                    MessageProcessor.ack_buffer.remove(user)
                     log("[recv_ack]", "SUCCESS")
                     return
         else:
-            raw_data = Cryptor.de(user.client_socket.recv(BUFFERSIZE))
+            raw_data = Cryptor.decrypt(user.client_socket.recv(BUFFERSIZE))
             if json.loads(raw_data)["type"] == "ack":
                 log("[recv_ack]", "SUCCESS")
                 return
@@ -198,8 +199,8 @@ class Handler:
 
         :param data: json private msg
         """
-        Handler.send_json(
-            [k for k, v in Handler.user_pool.items() if v in data["to"]], data
+        MessageProcessor.send_json(
+            [k for k, v in MessageProcessor.user_list.items() if v in data["to"]], data
         )
 
     @staticmethod
@@ -209,7 +210,7 @@ class Handler:
 
         :param data: json group msg
         """
-        Handler.send_json(Handler.user_pool.keys(), data)
+        MessageProcessor.send_json(MessageProcessor.user_list.keys(), data)
 
     def private_file(self, data):
         """
@@ -219,7 +220,7 @@ class Handler:
         """
         bin_data = self.recv_file(size=data["size"])
         self.send_file(
-            users=[k for k, v in Handler.user_pool.items() if v in data["to"]],
+            users=[k for k, v in MessageProcessor.user_list.items() if v in data["to"]],
             size=data["size"],
             ext=data["ext"],
             bin_data=bin_data,
@@ -233,7 +234,7 @@ class Handler:
         """
         bin_data = self.recv_file(size=data["size"])
         self.send_file(
-            users=list(Handler.user_pool.keys()),
+            users=list(MessageProcessor.user_list.keys()),
             size=data["size"],
             ext=data["ext"],
             bin_data=bin_data,
@@ -245,31 +246,43 @@ class Handler:
 
         :param data: json login package
         """
-        if self.user in Handler.user_pool.keys():  # already login
+        if self.user in MessageProcessor.user_list.keys():  # already login
             data["status"] = False
             data["info"] = "您已经登录了"
-        elif data["username"] in Handler.user_pool.values():  # username in use
+        elif data["username"] in MessageProcessor.user_list.values():  # username in use
             data["status"] = False
             data["info"] = "该用户名已被占用"
         else:  # login success
             data["status"] = True
-            Handler.user_pool[self.user] = data["username"]
+            MessageProcessor.user_list[self.user] = data["username"]
         self.send_json_back(data)
+        time.sleep(1)
+        MessageProcessor.tell_everyone()
 
-    def logout(self, _):
-        """
-        deal with the logout package
-
-        :param _: useless
-        """
-        log(
-            "[log_out] user:{} logout".format(Handler.user_pool[self.user]), "SUCCESS",
+    @ staticmethod
+    def tell_everyone():
+        list_of_user = list(MessageProcessor.user_list.values())
+        data = {"type": "list", "list": list_of_user}
+        MessageProcessor.send_json(
+            [k for k, v in MessageProcessor.user_list.items()], data
         )
-        Handler.user_pool.pop(self.user)
 
-    def ping(self):
-        """ping"""
-        self.send_json_back({"type": "ping"})
+    # def logout(self, _):
+    #     """
+    #     deal with the logout package
+    #
+    #     :param _: useless
+    #     """
+    #     log(
+    #         "[log_out] user:{} logout".format(MessageProcessor.user_list[self.user]), "SUCCESS",
+    #     )
+    #     MessageProcessor.user_list.pop(self.user)
+    #     time.sleep(1)
+    #     MessageProcessor.tell_everyone()
+
+    # def ping(self):
+    #     """ping"""
+    #     self.send_json_back({"type": "ping"})
 
     def get_list(self, data):
         """
@@ -277,7 +290,7 @@ class Handler:
 
         :param data: json
         """
-        data["list"] = list(Handler.user_pool.values())
+        data["list"] = list(MessageProcessor.user_list.values())
         self.send_json_back(data)
 
     def __main__(self, data):
@@ -289,14 +302,14 @@ class Handler:
         """
         switcher = {
             "login": self.login,
-            "logout": self.logout,
-            "ping": self.ping,
+            # "logout": self.logout,
+            # "ping": self.ping,
             "list": self.get_list,
             "private_msg": self.private_msg,
             "group_msg": self.group_msg,
             "private_file": self.private_file,
             "group_file": self.group_file,
-            "ack": lambda x: Handler.ack_buffer.append(self.user),
+            "ack": lambda x: MessageProcessor.ack_buffer.append(self.user),
         }
         try:
             return switcher[data["type"]](data)
@@ -322,9 +335,9 @@ class ClientThread(threading.Thread):
          closed.
         """
         try:
-            handler = Handler(self.user)  # handler input
+            handler = MessageProcessor(self.user)  # handler input
             while True:
-                raw_data = Cryptor.de(self.user.client_socket.recv(BUFFERSIZE))
+                raw_data = Cryptor.decrypt(self.user.client_socket.recv(BUFFERSIZE))
                 rec_data = json.loads(raw_data)
                 log("receive " + raw_data)
                 if rec_data["type"] == "logout":
@@ -334,12 +347,15 @@ class ClientThread(threading.Thread):
         except Exception as e:
             if str(e) != "No JSON object could be decoded":
                 log("[Connect Failed] {}".format(e), "ERROR")
+            else:
+                log("[An exception has been raised]", "ERROR")
         finally:
             log(
-                "[log_out] user:{} logout".format(Handler.user_pool[self.user]),
+                "[log_out_CT] user:{} logout".format(MessageProcessor.user_list[self.user]),
                 "SUCCESS",
             )
-            Handler.remove_user(self.user)
+            MessageProcessor.remove_user(self.user)
+            MessageProcessor.tell_everyone()
             self.user.client_socket.close()
 
     def stop(self):
